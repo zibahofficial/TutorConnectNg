@@ -39,11 +39,29 @@ export async function POST(req: NextRequest) {
     if (action === "signup") {
       const fullName = (body.fullName as string) || "New User";
       const role = ((body.role as UserRole) || "student") as UserRole;
+
+if (role === "admin") {
+  return NextResponse.json(
+    { error: "Admin accounts cannot be created through public signup." },
+    { status: 403 }
+  );
+}
       const phone = (body.phone as string) || null;
       const city = (body.city as string) || null;
       const state = (body.state as string) || null;
       const passwordHash = await bcrypt.hash(password, 10);
-
+      const childName = (body.childName as string) || null;
+const childAge = body.childAge ? Number(body.childAge) : null;
+const educationalLevel = (body.educationLevel as string) || null;
+const tutorBudget = body.tutorBudget ? Number(body.tutorBudget) : null;
+const learningMode = (body.learningMode as string) || null;
+const agreeTerms = body.agreeTerms === true;
+if (role === "parent" && !agreeTerms) {
+  return NextResponse.json(
+    { error: "Please agree to the terms of service and privacy policy." },
+    { status: 400 }
+  );
+}
       if (hasDatabase) {
         const typedSql = sql as unknown as SqlTag;
         const existing = await typedSql`SELECT id FROM users WHERE email = ${email}`;
@@ -55,9 +73,33 @@ export async function POST(req: NextRequest) {
           VALUES (${email}, ${passwordHash}, ${fullName}, ${role}, ${phone}, ${city}, ${state})
           RETURNING id, email, full_name, role, phone, city, state
         `;
-        const user = inserted[0];
-        const token = signToken({ id: user.id as string, email, role });
-        return NextResponse.json({ token, user });
+       const user = inserted[0];
+
+if (role === "parent") {
+  await typedSql`
+    INSERT INTO parent_profiles (
+      user_id,
+      child_name,
+      child_age,
+      educational_level,
+      tutor_budget,
+      learning_mode,
+      terms_agreed_at
+    )
+    VALUES (
+      ${user.id},
+      ${childName},
+      ${childAge},
+      ${educationalLevel},
+      ${tutorBudget},
+      ${learningMode},
+      NOW()
+    )
+  `;
+}
+
+const token = signToken({ id: user.id as string, email, role });
+return NextResponse.json({ token, user });
       }
 
       const store = getUserStore();

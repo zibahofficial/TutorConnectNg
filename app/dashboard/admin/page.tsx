@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   BadgeCheck,
@@ -26,12 +27,30 @@ function formatNaira(amount: number) {
     maximumFractionDigits: 0,
   }).format(amount);
 }
-
 export default function AdminDashboard() {
+  const router = useRouter();
+
   const [tutors, setTutors] = useState<Tutor[]>(TUTORS);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const rawUser = localStorage.getItem("tutorconnect_user");
 
+    if (!rawUser) {
+      router.replace("/login");
+      return;
+    }
+
+    try {
+      const user = JSON.parse(rawUser);
+
+      if (user.role !== "admin") {
+        router.replace("/");
+      }
+    } catch {
+      router.replace("/login");
+    }
+  }, [router]);
   useEffect(() => {
     fetch("/api/bookings")
       .then((res) => res.json())

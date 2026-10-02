@@ -125,7 +125,10 @@ function SignupForm() {
   // Student-specific fields
   const [educationLevel, setEducationLevel] = useState("");
   const [childName, setChildName] = useState("");
-
+// Parent-specific fields
+const [childAge, setChildAge] = useState("");
+const [tutorBudget, setTutorBudget] = useState("");
+const [learningMode, setLearningMode] = useState("");
   // Tutor-specific fields
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -142,9 +145,9 @@ function SignupForm() {
   const [error, setError] = useState("");
 
   const isStudentFlow = role === "student";
-  const isTutorFlow = role === "tutor";
-  const isParentBookingForChild = educationLevel === "Parent booking for a child";
-
+const isTutorFlow = role === "tutor";
+const isParentFlow = role === "parent";
+const isParentBookingForChild = educationLevel === "Parent booking for a child";
   const passwordHint = useMemo(
     () => "Use 8+ characters with a mix of letters and numbers.",
     []
@@ -212,24 +215,50 @@ function SignupForm() {
     if (!agreeTerms) return "Please agree to the terms of service and privacy policy to continue.";
     return null;
   }
+function validateParentForm(): string | null {
+  if (!fullName.trim()) return "Please enter your full name.";
+  if (!phone.trim()) return "Please enter your phone number.";
+  if (!email.trim()) return "Please enter your email address.";
 
+  const strongEnough = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password);
+  if (!strongEnough) return "Password must be 8+ characters with a mix of letters and numbers.";
+
+  if (password !== confirmPassword) return "Passwords do not match.";
+  if (!city.trim()) return "Please tell us your city.";
+  if (!stateValue) return "Please select your state.";
+  if (!childName.trim()) return "Please enter the child's name.";
+  if (!childAge) return "Please enter the child's age.";
+  if (!educationLevel) return "Please select an educational level.";
+  if (!tutorBudget) return "Please enter your tutor budget.";
+  if (!learningMode) return "Please select a learning mode.";
+  if (!agreeTerms) return "Please agree to the terms of service and privacy policy to continue.";
+
+  return null;
+}
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
     if (isStudentFlow) {
-      const validationError = validateStudentForm();
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
-    } else if (isTutorFlow) {
-      const validationError = validateTutorForm();
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
-    }
+  const validationError = validateStudentForm();
+  if (validationError) {
+    setError(validationError);
+    return;
+  }
+} else if (isTutorFlow) {
+  const validationError = validateTutorForm();
+  if (validationError) {
+    setError(validationError);
+    return;
+  }
+} else if (isParentFlow) {
+  const validationError = validateParentForm();
+  if (validationError) {
+    setError(validationError);
+    return;
+  }
+}
+  
 
     setLoading(true);
     try {
@@ -265,6 +294,19 @@ function SignupForm() {
                 qualification: qualification || undefined,
               }
             : {}),
+            ...(isParentFlow
+  ? {
+      phone,
+      city,
+      state: stateValue,
+      childName,
+      childAge,
+      educationLevel,
+      tutorBudget,
+      learningMode,
+       agreeTerms,
+    }
+  : {}),
         }),
       });
       const data = await res.json();
@@ -283,7 +325,7 @@ function SignupForm() {
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-navy-50/60 to-white px-4 py-12">
       <div
         className={`w-full rounded-3xl border border-slate-200 bg-white p-8 shadow-soft transition-all ${
-          isTutorFlow ? "max-w-2xl" : "max-w-md"
+          isTutorFlow || isParentFlow ? "max-w-2xl" : "max-w-md"
         }`}
       >
         <Link href="/" className="mb-6 flex items-center justify-center gap-2.5">
@@ -854,61 +896,267 @@ function SignupForm() {
               </label>
             </>
           )}
+{isParentFlow && (
+  <>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+          Full name <span className="text-rose-500">*</span>
+        </label>
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+          <User size={16} className="text-slate-400" />
+          <input
+            required
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="w-full bg-transparent text-sm focus:outline-none"
+            placeholder="Your full name"
+          />
+        </div>
+      </div>
 
-          {!isStudentFlow && !isTutorFlow && (
-            <>
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Full Name</label>
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
-                  <User size={16} className="text-slate-400" />
-                  <input
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full bg-transparent text-sm focus:outline-none"
-                    placeholder="Your full name"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Email Address</label>
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
-                  <Mail size={16} className="text-slate-400" />
-                  <input
-                    required
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-transparent text-sm focus:outline-none"
-                    placeholder="you@example.com"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Password</label>
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
-                  <Lock size={16} className="text-slate-400" />
-                  <input
-                    required
-                    minLength={6}
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-transparent text-sm focus:outline-none"
-                    placeholder="At least 6 characters"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((s) => !s)}
-                    className="text-slate-400 hover:text-slate-600"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+      <div>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+          Phone number <span className="text-rose-500">*</span>
+        </label>
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+          <Phone size={16} className="text-slate-400" />
+          <input
+            required
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="w-full bg-transparent text-sm focus:outline-none"
+            placeholder="08012345678"
+          />
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+        Email address <span className="text-rose-500">*</span>
+      </label>
+      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+        <Mail size={16} className="text-slate-400" />
+        <input
+          required
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full bg-transparent text-sm focus:outline-none"
+          placeholder="you@example.com"
+        />
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+          Password <span className="text-rose-500">*</span>
+        </label>
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+          <Lock size={16} className="text-slate-400" />
+          <input
+            required
+            minLength={8}
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full bg-transparent text-sm focus:outline-none"
+            placeholder="Create a password"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((s) => !s)}
+            className="text-slate-400 hover:text-slate-600"
+            aria-label={showPassword ? "Hide password" : "Show password"}
+          >
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+        <p className="mt-1.5 text-xs text-slate-400">{passwordHint}</p>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+          Confirm password <span className="text-rose-500">*</span>
+        </label>
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+          <Lock size={16} className="text-slate-400" />
+          <input
+            required
+            minLength={8}
+            type={showConfirmPassword ? "text" : "password"}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="w-full bg-transparent text-sm focus:outline-none"
+            placeholder="Re-enter your password"
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirmPassword((s) => !s)}
+            className="text-slate-400 hover:text-slate-600"
+            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+          >
+            {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div className="border-t border-slate-100 pt-4">
+      <p className="mb-2.5 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+        <MapPin size={15} className="text-navy-600" />
+        Your location
+      </p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-400">
+            City
+          </label>
+          <input
+            required
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            placeholder="e.g. Asaba"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-400">
+            State
+          </label>
+          <select
+            required
+            value={stateValue}
+            onChange={(e) => setStateValue(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+          >
+            <option value="">Select state</option>
+            {NIGERIAN_STATES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div className="border-t border-slate-100 pt-4">
+      <p className="mb-3 text-sm font-bold text-slate-700">
+        About the learner
+      </p>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+            Child&apos;s name <span className="text-rose-500">*</span>
+          </label>
+          <input
+            required
+            value={childName}
+            onChange={(e) => setChildName(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            placeholder="e.g. Chinedu"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+            Child&apos;s age <span className="text-rose-500">*</span>
+          </label>
+          <input
+            required
+            type="number"
+            min={1}
+            max={100}
+            value={childAge}
+            onChange={(e) => setChildAge(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            placeholder="e.g. 12"
+          />
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+        Educational level <span className="text-rose-500">*</span>
+      </label>
+      <select
+        required
+        value={educationLevel}
+        onChange={(e) => setEducationLevel(e.target.value)}
+        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+      >
+        <option value="">Select educational level</option>
+        {EDUCATION_LEVELS.map((level) => (
+          <option key={level} value={level}>{level}</option>
+        ))}
+      </select>
+    </div>
+
+    <div>
+      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+        Tutor budget (₦) <span className="text-rose-500">*</span>
+      </label>
+      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+        <Wallet size={16} className="text-slate-400" />
+        <input
+          required
+          type="number"
+          min={0}
+          step={500}
+          value={tutorBudget}
+          onChange={(e) => setTutorBudget(e.target.value)}
+          className="w-full bg-transparent text-sm focus:outline-none"
+          placeholder="e.g. 10000"
+        />
+      </div>
+    </div>
+
+    <div>
+      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+        Learning mode <span className="text-rose-500">*</span>
+      </label>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {[
+          ["online", "Online"],
+          ["in_person", "In person"],
+          ["both", "Both"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setLearningMode(value)}
+            className={`rounded-xl border px-3 py-2.5 text-xs font-bold transition-colors ${
+              learningMode === value
+                ? "border-navy-600 bg-navy-50 text-navy-700"
+                : "border-slate-200 text-slate-500 hover:border-slate-300"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
+      <input
+        type="checkbox"
+        checked={agreeTerms}
+        onChange={(e) => setAgreeTerms(e.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
+      />
+      I agree to the TutorConnect terms of service and privacy policy, and confirm the information above is accurate.
+    </label>
+  </>
+)}
+               
+                    
 
           {error && <p className="text-sm font-medium text-red-600">{error}</p>}
 
