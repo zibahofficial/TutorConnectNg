@@ -81,12 +81,14 @@ export default function StudentDashboard() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [savedTutorIds, setSavedTutorIds] = useState<string[]>(["t1"]);
+  const [savedTutorIds, setSavedTutorIds] = useState<string[]>([]);
 
   const [reviewTarget, setReviewTarget] = useState<Booking | null>(null);
   const [reviewedIds, setReviewedIds] = useState<string[]>([]);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     try {
@@ -98,21 +100,49 @@ export default function StudentDashboard() {
           setProfileForm(parsed);
         } else if (parsed?.full_name || parsed?.email) {
           router.replace("/");
+          return;
         } else {
           router.replace("/login");
+          return;
         }
       } else {
         router.replace("/login");
+        return;
       }
     } catch {
       router.replace("/login");
+      return;
     }
+    setAuthChecked(true);
+  }, [router]);
+
+  useEffect(() => {
+    if (!authChecked || !user) return;
+    let stored: string[] = [];
+    try { stored = JSON.parse(localStorage.getItem("tutorconnect_saved_tutors") || "[]"); } catch {}
+    setSavedTutorIds(stored);
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    fetch(`/api/auth?action=saved_tutors${token ? `&token=${token}` : ""}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const ids: string[] = (data.savedTutors ?? []).map((s: { tutorId: string }) => s.tutorId);
+        if (ids.length > 0) {
+          setSavedTutorIds(ids);
+          try { localStorage.setItem("tutorconnect_saved_tutors", JSON.stringify(ids)); } catch {}
+        }
+      })
+      .catch(() => {});
 
     fetch("/api/bookings")
       .then((res) => res.json())
-      .then((data) => setBookings(data.bookings ?? []))
+      .then((data) => {
+        const all = data.bookings ?? [];
+        const userId = user?.id;
+        const filtered = userId ? all.filter((b: Booking) => !b.studentId || b.studentId === userId || b.studentId === "demo_student") : all;
+        setBookings(filtered);
+      })
       .finally(() => setLoading(false));
-  }, [router]);
+  }, [authChecked, user]);
 
   const stats = useMemo(() => {
     const pending = bookings.filter((b) => b.status === "pending").length;
@@ -131,8 +161,40 @@ export default function StudentDashboard() {
   const savedTutors = TUTORS.filter((t) => savedTutorIds.includes(t.id));
   const completedBookings = bookings.filter((b) => b.status === "completed");
 
-  function toggleSavedTutor(id: string) {
-    setSavedTutorIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  async function toggleSavedTutor(id: string) {
+    const tutor = TUTORS.find((t) => t.id === id);
+    const isSaving = !savedTutorIds.includes(id);
+    const newIds = isSaving ? [...savedTutorIds, id] : savedTutorIds.filter((t) => t !== id);
+    setSavedTutorIds(newIds);
+    try {
+      localStorage.setItem("tutorconnect_saved_tutors", JSON.stringify(newIds));
+    } catch {
+      // ignore
+    }
+    try {
+      const token = localStorage.getItem("tutorconnect_token") || "";
+      await fetch("/api/auth", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action: isSaving ? "save_tutor" : "remove_tutor",
+          tutorId: id,
+          ...(tutor
+            ? {
+                tutorName: tutor.fullName,
+                tutorAvatar: tutor.avatarUrl,
+                tutorHeadline: tutor.headline,
+                tutorRate: tutor.hourlyRate,
+              }
+            : {}),
+        }),
+      });
+    } catch {
+      // demo mode fallback
+    }
   }
 
   async function submitReview() {
@@ -192,14 +254,6 @@ export default function StudentDashboard() {
     localStorage.removeItem("tutorconnect_user");
     setShowDeleteConfirm(false);
     router.replace("/");
-  }
-
-  if (!user) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <p className="text-slate-400">Checking authentication…</p>
-      </div>
-    );
   }
 
   return (

@@ -149,9 +149,25 @@ const isTutorFlow = role === "tutor";
 const isParentFlow = role === "parent";
 const isParentBookingForChild = educationLevel === "Parent booking for a child";
   const passwordHint = useMemo(
-    () => "Use 8+ characters with a mix of letters and numbers.",
+    () => "Use 8+ characters with at least one uppercase letter, one lowercase letter, one number, and one special character.",
     []
   );
+
+  function validateEmail(email: string): string | null {
+    if (!email.trim()) return "Please enter your email address.";
+    if (email !== email.toLowerCase()) return "Email must be all lowercase.";
+    if (!email.endsWith("@gmail.com")) return "Email must be a Gmail address ending with @gmail.com.";
+    return null;
+  }
+
+  function validatePassword(password: string): string | null {
+    if (password.length < 8) return "Password must be at least 8 characters long.";
+    if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter.";
+    if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter.";
+    if (!/\d/.test(password)) return "Password must contain at least one number.";
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) return "Password must contain at least one special character.";
+    return null;
+  }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -187,9 +203,10 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
 
   function validateStudentForm(): string | null {
     if (!fullName.trim()) return "Please enter your full name.";
-    if (!email.trim()) return "Please enter your email address.";
-    const strongEnough = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password);
-    if (!strongEnough) return "Password must be 8+ characters with a mix of letters and numbers.";
+    const emailError = validateEmail(email);
+    if (emailError) return emailError;
+    const passwordError = validatePassword(password);
+    if (passwordError) return passwordError;
     if (password !== confirmPassword) return "Passwords do not match.";
     if (!city.trim()) return "Please tell us your city.";
     if (!stateValue) return "Please select your state.";
@@ -200,9 +217,10 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
 
   function validateTutorForm(): string | null {
     if (!fullName.trim()) return "Please enter your full name.";
-    if (!email.trim()) return "Please enter your email address.";
-    const strongEnough = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password);
-    if (!strongEnough) return "Password must be 8+ characters with a mix of letters and numbers.";
+    const emailError = validateEmail(email);
+    if (emailError) return emailError;
+    const passwordError = validatePassword(password);
+    if (passwordError) return passwordError;
     if (password !== confirmPassword) return "Passwords do not match.";
     if (!headline) return "Please select your professional headline.";
     if (bio.trim().length < 40) return "Your bio must be at least 40 characters.";
@@ -215,15 +233,17 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
     if (!agreeTerms) return "Please agree to the terms of service and privacy policy to continue.";
     return null;
   }
-function validateParentForm(): string | null {
-  if (!fullName.trim()) return "Please enter your full name.";
-  if (!phone.trim()) return "Please enter your phone number.";
-  if (!email.trim()) return "Please enter your email address.";
+  function validateParentForm(): string | null {
+    if (!fullName.trim()) return "Please enter your full name.";
+    if (!phone.trim()) return "Please enter your phone number.";
 
-  const strongEnough = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(password);
-  if (!strongEnough) return "Password must be 8+ characters with a mix of letters and numbers.";
+    const emailError = validateEmail(email);
+    if (emailError) return emailError;
 
-  if (password !== confirmPassword) return "Passwords do not match.";
+    const passwordError = validatePassword(password);
+    if (passwordError) return passwordError;
+
+    if (password !== confirmPassword) return "Passwords do not match.";
   if (!city.trim()) return "Please tell us your city.";
   if (!stateValue) return "Please select your state.";
   if (!childName.trim()) return "Please enter the child's name.";
@@ -271,6 +291,7 @@ function validateParentForm(): string | null {
           email,
           password,
           role,
+          avatarUrl: photoPreview || undefined,
           ...(isStudentFlow
             ? {
                 phone: phone || undefined,
@@ -313,7 +334,7 @@ function validateParentForm(): string | null {
       if (!res.ok) throw new Error(data.error || "Signup failed");
       localStorage.setItem("tutorconnect_token", data.token);
       localStorage.setItem("tutorconnect_user", JSON.stringify(data.user));
-      router.push(role === "tutor" ? "/dashboard/tutor" : role === "admin" ? "/dashboard/admin" : "/dashboard/student");
+      router.push(role === "tutor" ? "/dashboard/tutor" : role === "parent" ? "/dashboard/parent" : "/dashboard/student");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
     } finally {

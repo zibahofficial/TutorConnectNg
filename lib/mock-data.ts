@@ -327,6 +327,7 @@ export const TUTORS: Tutor[] = [
 export const BOOKINGS: Booking[] = [
   {
     id: "b1",
+    studentId: "demo_student",
     studentName: "Zainab Hassan",
     tutorId: "t1",
     tutorName: "Chiamaka Okafor",
@@ -343,6 +344,7 @@ export const BOOKINGS: Booking[] = [
   },
   {
     id: "b2",
+    studentId: "demo_student",
     studentName: "Daniel Afolabi",
     tutorId: "t4",
     tutorName: "Emeka Nwachukwu",
@@ -360,6 +362,7 @@ export const BOOKINGS: Booking[] = [
   },
   {
     id: "b3",
+    studentId: "student-2",
     studentName: "Amara Chukwu",
     tutorId: "t6",
     tutorName: "Olumide Adeyemi",
@@ -376,6 +379,7 @@ export const BOOKINGS: Booking[] = [
   },
   {
     id: "b4",
+    studentId: "demo_student",
     studentName: "Precious Edet",
     tutorId: "t2",
     tutorName: "Tunde Bakare",
@@ -392,6 +396,7 @@ export const BOOKINGS: Booking[] = [
   },
   {
     id: "b5",
+    studentId: "student-3",
     studentName: "Tobi Olawale",
     tutorId: "t1",
     tutorName: "Chiamaka Okafor",

@@ -40,6 +40,7 @@ interface AuthUser {
 export default function TutorDashboard() {
   const router = useRouter();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -58,7 +59,9 @@ export default function TutorDashboard() {
       setAuthUser(parsed);
     } catch {
       router.replace("/login");
+      return;
     }
+    setAuthChecked(true);
   }, [router]);
 
   const tutor = getTutorById(DEMO_TUTOR_ID)!;
@@ -136,19 +139,53 @@ export default function TutorDashboard() {
     // optimistic UI already applied; silently ignore demo network errors
   }
 }
-function addSlot() {
-  setAvailability((prev) => [...prev, newSlot]);
-}
+  async function addSlot() {
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    setAvailability((prev) => [...prev, newSlot]);
+    try {
+      await fetch("/api/auth", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "add_availability", day: newSlot.day, start: newSlot.start, end: newSlot.end }),
+      });
+    } catch {
+      // demo mode fallback
+    }
+  }
 
-function removeSlot(day: string, start: string) {
-  setAvailability((prev) =>
-    prev.filter((s) => !(s.day === day && s.start === start))
-  );
-}
+  async function removeSlot(day: string, start: string) {
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    setAvailability((prev) =>
+      prev.filter((s) => !(s.day === day && s.start === start))
+    );
+    try {
+      await fetch("/api/auth", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "delete_availability", day, start }),
+      });
+    } catch {
+      // demo mode fallback
+    }
+  }
 
 
   const pendingRequests = bookings.filter((b) => b.status === "pending");
   const otherBookings = bookings.filter((b) => b.status !== "pending");
+
+  if (!authChecked || !authUser) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-slate-400">Checking authentication…</p>
+      </div>
+    );
+  }
 
   return (
     <>

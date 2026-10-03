@@ -9,8 +9,11 @@ import {
   BarChart3,
   CalendarCheck2,
   FileCheck2,
+  Lock,
+  Search,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   Users,
   Wallet,
 } from "lucide-react";
@@ -32,6 +35,8 @@ export default function AdminDashboard() {
 
   const [tutors, setTutors] = useState<Tutor[]>(TUTORS);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [adminUsers, setAdminUsers] = useState<Array<{ id: string; email: string; full_name: string; role: string; is_active: boolean; created_at: string }>>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -52,6 +57,18 @@ export default function AdminDashboard() {
       router.replace("/login");
     }
   }, [router]);
+
+  useEffect(() => {
+    if (!authChecked) return;
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    fetch(`/api/auth?action=admin_list_users${token ? `?token=${token}` : ""}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setAdminUsers(data.users ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setUsersLoading(false));
+  }, [authChecked]);
 
   useEffect(() => {
     fetch("/api/bookings")
@@ -77,10 +94,29 @@ export default function AdminDashboard() {
     }));
   }, [bookings]);
 
-  function toggleVerification(id: string) {
+  async function toggleVerification(id: string) {
+    const currentTutor = tutors.find((t) => t.id === id);
+    const newVerified = !currentTutor?.isVerified;
     setTutors((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, isVerified: !t.isVerified } : t))
+      prev.map((t) => (t.id === id ? { ...t, isVerified: newVerified } : t))
     );
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    try {
+      await fetch("/api/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action: "admin_update_tutor_status",
+          targetId: id,
+          isVerified: newVerified,
+        }),
+      });
+    } catch {
+      // demo mode; local state already updated
+    }
   }
 
   const maxCount = Math.max(1, ...bookingBreakdown.map((b) => b.count));
@@ -202,6 +238,112 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-card">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-slate-900">User Management</h2>
+            <div className="relative w-64">
+              <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search users by email..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-sm focus:border-navy-600 focus:outline-none"
+                defaultValue=""
+              />
+            </div>
+          </div>
+        </div>
+        {usersLoading ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-400">Loading users…</p>
+        ) : adminUsers.length === 0 ? (
+          <div className="px-6 py-8 text-center">
+            <Users size={40} className="mx-auto mb-2 text-slate-200" />
+            <p className="text-sm text-slate-500">No users registered yet.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[500px] text-left text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  <th className="px-4 py-3">User</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Joined</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {adminUsers.map((u) => (
+                  <tr key={u.id} className="align-top">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-navy-100 font-display text-xs font-bold text-navy-700">
+                          {u.full_name ? getInitials(u.full_name) : <Lock size={14} />}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-900">{u.full_name || "Unknown"}</p>
+                          <p className="truncate text-xs text-slate-500">{u.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold uppercase" style={{ backgroundColor: roleColor(u.role), color: roleTextColor(u.role) }}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={u.is_active ? "accepted" : "cancelled"} />
+                    </td>
+                    <td className="px-4 py-3 text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</td>
+                    <td className="px-4 py-3 text-right">
+                      {u.role !== "admin" && (
+                        <button
+                          onClick={async () => {
+                            const token = localStorage.getItem("tutorconnect_token") || "";
+                            await fetch("/api/auth", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                              body: JSON.stringify({ action: "admin_delete_user", targetEmail: u.email }),
+                            }).catch(() => {});
+                            setAdminUsers((prev) => prev.filter((x) => x.id !== u.id));
+                          }}
+                          className="rounded-full p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                          title="Delete user"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </DashboardShell>
   );
+}
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+}
+
+function roleColor(role: string): string {
+  switch (role) {
+    case "admin": return "#fbbf24";
+    case "tutor": return "#3b82f6";
+    case "parent": return "#10b981";
+    default: return "#94a3b8";
+  }
+}
+
+function roleTextColor(role: string): string {
+  return "#ffffff";
 }
