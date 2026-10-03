@@ -21,6 +21,7 @@ import {
   User,
   Wallet,
   X,
+   Video,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -391,6 +392,19 @@ function OverviewPanel({
                 <p className="text-xs text-slate-500">{b.scheduledDate} · {b.startTime}–{b.endTime}</p>
               </div>
               <StatusBadge status={b.status} />
+              {b.sessionMode === "online" &&
+  b.meetingLink &&
+  b.status === "accepted" && (
+    <a
+      href={b.meetingLink}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+    >
+      <Video size={14} />
+      Join Online Session
+    </a>
+  )}
             </li>
           ))}
         </ul>

@@ -51,26 +51,51 @@ export default function TutorDashboard() {
     return { pending, upcoming, completed: completed.length, earnings };
   }, [bookings]);
 
-  async function updateStatus(id: string, status: Booking["status"]) {
-    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status } : b)));
-    try {
-      await fetch("/api/bookings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status }),
-      });
-    } catch {
-      // optimistic UI already applied; silently ignore demo network errors
+  async function updateStatus(
+  id: string,
+  status: Booking["status"],
+  booking?: Booking
+) {
+  let meetingLink: string | undefined;
+
+  if (status === "accepted" && booking?.sessionMode === "online") {
+    meetingLink = window.prompt(
+      "Paste the Zoom or Google Meet link for this session:"
+    )?.trim();
+
+    if (!meetingLink) {
+      return;
     }
   }
 
-  function addSlot() {
-    setAvailability((prev) => [...prev, newSlot]);
-  }
+  setBookings((prev) =>
+    prev.map((b) =>
+      b.id === id
+        ? { ...b, status, ...(meetingLink ? { meetingLink } : {}) }
+        : b
+    )
+  );
 
-  function removeSlot(day: string, start: string) {
-    setAvailability((prev) => prev.filter((s) => !(s.day === day && s.start === start)));
+  try {
+    await fetch("/api/bookings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status, meetingLink }),
+    });
+  } catch {
+    // optimistic UI already applied; silently ignore demo network errors
   }
+}
+function addSlot() {
+  setAvailability((prev) => [...prev, newSlot]);
+}
+
+function removeSlot(day: string, start: string) {
+  setAvailability((prev) =>
+    prev.filter((s) => !(s.day === day && s.start === start))
+  );
+}
+
 
   const pendingRequests = bookings.filter((b) => b.status === "pending");
   const otherBookings = bookings.filter((b) => b.status !== "pending");
@@ -119,7 +144,7 @@ export default function TutorDashboard() {
                     <div className="flex items-center gap-2">
                       <span className="font-display font-bold text-navy-700">{formatNaira(b.totalPrice)}</span>
                       <button
-                        onClick={() => updateStatus(b.id, "accepted")}
+                        onClick={() => updateStatus (b.id, "accepted", b)}
                         className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
                       >
                         <Check size={14} /> Accept

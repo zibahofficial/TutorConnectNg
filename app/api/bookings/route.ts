@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     endTime: (body.endTime as string) || (body.startTime as string),
     status: "pending",
     sessionMode: (body.sessionMode as "online" | "in_person") || "online",
-    meetingLink: body.sessionMode === "online" ? "https://meet.google.com/pending-confirmation" : undefined,
+    meetingLink: body.sessionMode === "online" ?  (body.meetingLink as string) || undefined : undefined,
     totalPrice: Number(body.totalPrice) || 0,
     notes: (body.notes as string) || "",
     createdAt: new Date().toISOString(),
@@ -87,14 +87,14 @@ export async function POST(req: NextRequest) {
       const typedSql = sql as unknown as SqlTag;
       const inserted = await typedSql`
         INSERT INTO bookings (
-          student_id, tutor_id, scheduled_date, start_time, end_time,
-          status, session_mode, total_price, notes, grade_level
-        ) VALUES (
-          ${body.studentId || null}, ${body.tutorId}, ${body.scheduledDate},
-          ${body.startTime}, ${body.endTime || body.startTime}, 'pending',
-          ${body.sessionMode || "online"}, ${Number(body.totalPrice) || 0},
-          ${body.notes || ""}, ${body.gradeLevel}
-        )
+  student_id, tutor_id, scheduled_date, start_time, end_time,
+  status, session_mode, meeting_link, total_price, notes, grade_level
+) VALUES (
+  ${body.studentId || null}, ${body.tutorId}, ${body.scheduledDate},
+  ${body.startTime}, ${body.endTime || body.startTime}, 'pending',
+  ${body.sessionMode || "online"}, ${body.meetingLink || null},
+  ${Number(body.totalPrice) || 0}, ${body.notes || ""}, ${body.gradeLevel}
+)
         RETURNING *
       `;
       return NextResponse.json({ source: "neon", booking: inserted[0] }, { status: 201 });
@@ -117,7 +117,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { id, status } = body as { id: string; status: Booking["status"] };
+  const { id, status, meetingLink } = body as {
+  id: string;
+  status: Booking["status"];
+  meetingLink?: string;
+};
   if (!id || !status) {
     return NextResponse.json({ error: "id and status are required." }, { status: 400 });
   }
@@ -126,8 +130,13 @@ export async function PATCH(req: NextRequest) {
     try {
       const typedSql = sql as unknown as SqlTag;
       const updated = await typedSql`
-        UPDATE bookings SET status = ${status} WHERE id = ${id} RETURNING *
-      `;
+  UPDATE bookings
+  SET
+    status = ${status},
+    meeting_link = COALESCE(${meetingLink || null}, meeting_link)
+  WHERE id = ${id}
+  RETURNING *
+`;
       return NextResponse.json({ source: "neon", booking: updated[0] });
     } catch (err) {
       console.error("Neon booking update failed, falling back to in-memory store:", err);
