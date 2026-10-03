@@ -1,8 +1,8 @@
 "use client";
-
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { CalendarCheck, Search, ShieldCheck, Sparkles } from "lucide-react";
 
+import { CalendarCheck, Search, ShieldCheck, Sparkles } from "lucide-react";
 const STEPS = [
   {
     icon: Search,
@@ -65,8 +65,20 @@ export default function HowItWorks() {
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((step, i) => (
-              <motion.div
-                key={step.title}
+             <Link
+  key={step.title}
+  href={
+    i === 0
+      ? "/tutors"
+      : i === 1
+        ? "/tutors"
+        : i === 2
+          ? "/login"
+          : "/dashboard/student"
+  }
+  className="block"
+>
+  <motion.div
                 initial={{ opacity: 0, y: 28 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: "-40px" }}
@@ -96,6 +108,7 @@ export default function HowItWorks() {
                   {step.description}
                 </p>
               </motion.div>
+               </Link>
             ))}
           </div>
         </div>

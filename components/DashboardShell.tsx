@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   GraduationCap,
   LayoutDashboard,
@@ -26,6 +26,17 @@ export default function DashboardShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  function handleLogout() {
+    try {
+      localStorage.removeItem("tutorconnect_token");
+      localStorage.removeItem("tutorconnect_user");
+    } catch {
+      // ignore storage errors in strict private modes
+    }
+    router.replace("/");
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -39,9 +50,12 @@ export default function DashboardShell({
               TutorConnect NG <span className="font-medium text-slate-400">· Dashboard</span>
             </span>
           </Link>
-          <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-navy-700">
+          <button
+            onClick={handleLogout}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-navy-700"
+          >
             <LogOut size={15} /> Exit to site
-          </Link>
+          </button>
         </div>
         <div className="container-app flex gap-1 overflow-x-auto pb-3">
           {TABS.map((tab) => {

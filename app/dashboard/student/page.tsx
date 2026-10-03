@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Award,
   BookOpen,
@@ -59,22 +60,22 @@ function getInitials(name: string) {
 }
 
 interface StoredUser {
+  id?: string;
   full_name?: string;
   email?: string;
   phone?: string;
   city?: string;
   state?: string;
+  role?: string;
 }
 
 export default function StudentDashboard() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
 
-  const [user, setUser] = useState<StoredUser>({
-    full_name: "Uchekwe Uchechukwu Hephzibah",
-    email: "hephzibah2uche@gmail.com",
-  });
+  const [user, setUser] = useState<StoredUser | null>(null);
 
-  const [profileForm, setProfileForm] = useState<StoredUser>(user);
+  const [profileForm, setProfileForm] = useState<StoredUser>({});
   const [profileSaved, setProfileSaved] = useState(false);
 
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -92,21 +93,26 @@ export default function StudentDashboard() {
       const stored = localStorage.getItem("tutorconnect_user");
       if (stored) {
         const parsed = JSON.parse(stored) as StoredUser;
-        if (parsed?.full_name || parsed?.email) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrating from localStorage on mount only
+        if (parsed && (parsed.role === "student" || parsed.role === "parent")) {
           setUser(parsed);
           setProfileForm(parsed);
+        } else if (parsed?.full_name || parsed?.email) {
+          router.replace("/");
+        } else {
+          router.replace("/login");
         }
+      } else {
+        router.replace("/login");
       }
     } catch {
-      // ignore malformed storage, fall back to demo persona
+      router.replace("/login");
     }
 
     fetch("/api/bookings")
       .then((res) => res.json())
       .then((data) => setBookings(data.bookings ?? []))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   const stats = useMemo(() => {
     const pending = bookings.filter((b) => b.status === "pending").length;
@@ -129,8 +135,23 @@ export default function StudentDashboard() {
     setSavedTutorIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   }
 
-  function submitReview() {
+  async function submitReview() {
     if (!reviewTarget) return;
+    try {
+      await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId: reviewTarget.id,
+          tutorId: reviewTarget.tutorId,
+          studentName: user?.full_name || "Student",
+          rating,
+          comment,
+        }),
+      });
+    } catch {
+      // demo mode; API may not persist in mock
+    }
     setReviewedIds((prev) => [...prev, reviewTarget.id]);
     setReviewTarget(null);
     setRating(5);
@@ -149,8 +170,37 @@ export default function StudentDashboard() {
     setTimeout(() => setProfileSaved(false), 2500);
   }
 
-  const displayName = user.full_name || "Student";
-  const displayEmail = user.email || "student@tutorconnect.ng";
+  const displayName = user?.full_name || "Student";
+  const displayEmail = user?.email || "student@tutorconnect.ng";
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteAccount() {
+    if (!user?.email) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_account", email: user.email, password: "delete" }),
+      });
+      if (!res.ok) throw new Error("Could not delete account");
+    } catch {
+      // demo mode; proceed with client-side cleanup regardless
+    }
+    localStorage.removeItem("tutorconnect_token");
+    localStorage.removeItem("tutorconnect_user");
+    setShowDeleteConfirm(false);
+    router.replace("/");
+  }
+
+  if (!user) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-slate-400">Checking authentication…</p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -282,12 +332,27 @@ export default function StudentDashboard() {
                 {activeTab === "payments" && <PaymentsPanel bookings={bookings} loading={loading} />}
 
                 {activeTab === "profile" && (
-                  <ProfilePanel
-                    form={profileForm}
-                    onChange={setProfileForm}
-                    onSubmit={saveProfile}
-                    saved={profileSaved}
-                  />
+                  <>
+                    <ProfilePanel
+                      form={profileForm}
+                      onChange={setProfileForm}
+                      onSubmit={saveProfile}
+                      saved={profileSaved}
+                    />
+                    <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-card">
+                      <h3 className="font-display text-lg font-bold text-rose-900">Delete Account</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        This will permanently delete your account and all associated data.
+                        This action cannot be undone.
+                      </p>
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700"
+                      >
+                        Delete My Account
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -338,6 +403,36 @@ export default function StudentDashboard() {
             <button onClick={submitReview} className="btn-primary mt-4 w-full">
               Submit Review
             </button>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+          onClick={() => !deleting && setShowDeleteConfirm(false)}
+        >
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-soft" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-lg font-bold text-rose-900">Confirm Account Deletion</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to permanently delete your account? This action cannot be undone.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {deleting ? "Deleting…" : "Delete Account"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -458,10 +553,20 @@ function BookingsPanel({
                 {b.notes && <p className="mt-1.5 text-xs italic text-slate-400">&ldquo;{b.notes}&rdquo;</p>}
               </div>
 
-              <div className="flex items-center gap-3">
-                <span className="font-display font-bold text-navy-700">{formatNaira(b.totalPrice)}</span>
-                <StatusBadge status={b.status} />
-                {b.status === "completed" && !reviewedIds.includes(b.id) && (
+               <div className="flex items-center gap-3">
+                 <span className="font-display font-bold text-navy-700">{formatNaira(b.totalPrice)}</span>
+                 <StatusBadge status={b.status} />
+                 {b.sessionMode === "online" && b.meetingLink && b.status === "accepted" && (
+                   <a
+                     href={b.meetingLink}
+                     target="_blank"
+                     rel="noreferrer"
+                     className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+                   >
+                     <Video size={14} /> Join
+                   </a>
+                 )}
+                 {b.status === "completed" && !reviewedIds.includes(b.id) && (
                   <button
                     onClick={() => onReview(b)}
                     className="inline-flex items-center gap-1 rounded-full border border-navy-200 px-3 py-1.5 text-xs font-bold text-navy-700 hover:bg-navy-50"

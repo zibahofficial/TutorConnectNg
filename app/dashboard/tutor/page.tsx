@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Calendar,
   Check,
@@ -29,12 +30,61 @@ function formatNaira(amount: number) {
   }).format(amount);
 }
 
+interface AuthUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+}
+
 export default function TutorDashboard() {
+  const router = useRouter();
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("tutorconnect_user");
+      if (!raw) {
+        router.replace("/login");
+        return;
+      }
+      const parsed = JSON.parse(raw) as AuthUser;
+      if (parsed.role !== "tutor") {
+        router.replace("/");
+        return;
+      }
+      setAuthUser(parsed);
+    } catch {
+      router.replace("/login");
+    }
+  }, [router]);
+
   const tutor = getTutorById(DEMO_TUTOR_ID)!;
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [availability, setAvailability] = useState<AvailabilitySlot[]>(tutor.availability);
   const [newSlot, setNewSlot] = useState<AvailabilitySlot>({ day: "Mon", start: "09:00", end: "11:00" });
+
+  async function handleDeleteAccount() {
+    if (!authUser?.email) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_account", email: authUser.email, password: "delete" }),
+      });
+      if (!res.ok) throw new Error("Could not delete account");
+    } catch {
+      // demo mode; proceed with client-side cleanup regardless
+    }
+    localStorage.removeItem("tutorconnect_token");
+    localStorage.removeItem("tutorconnect_user");
+    setShowDeleteConfirm(false);
+    router.replace("/");
+  }
 
   useEffect(() => {
     fetch(`/api/bookings?tutorId=${DEMO_TUTOR_ID}`)
@@ -101,8 +151,9 @@ function removeSlot(day: string, start: string) {
   const otherBookings = bookings.filter((b) => b.status !== "pending");
 
   return (
+    <>
     <DashboardShell
-      title={`Welcome back, ${tutor.fullName.split(" ")[0]}`}
+      title={`Welcome back, ${(authUser?.full_name ?? "Tutor").split(" ")[0]}`}
       subtitle="Manage booking requests, your weekly availability, and track your earnings."
     >
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -234,6 +285,50 @@ function removeSlot(day: string, start: string) {
           </div>
         </div>
       </div>
+
+      <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-card">
+        <h3 className="font-display text-lg font-bold text-rose-900">Delete Account</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          This will permanently delete your account and all associated data. This action cannot be undone.
+        </p>
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700"
+        >
+          <Trash2 size={15} /> Delete My Account
+        </button>
+      </div>
     </DashboardShell>
+
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+          onClick={() => !deleting && setShowDeleteConfirm(false)}
+        >
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-soft" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-lg font-bold text-rose-900">Confirm Account Deletion</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to permanently delete your account? This action cannot be undone.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {deleting ? "Deleting…" : "Delete Account"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

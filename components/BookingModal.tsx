@@ -69,12 +69,26 @@ export default function BookingModal({
     setSubmitting(true);
     setError("");
     try {
+      let studentName = "";
+      let studentId = "";
+      try {
+        const stored = localStorage.getItem("tutorconnect_user");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          studentName = (parsed.full_name as string) || "";
+          studentId = (parsed.id as string) || "";
+        }
+      } catch {
+        // ignore; studentName/studentId will be empty
+      }
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tutorId: tutor.id,
           tutorName: tutor.fullName,
+          studentName: studentName || tutor.fullName,
+          studentId,
           subject,
           gradeLevel: grade,
           scheduledDate: date,

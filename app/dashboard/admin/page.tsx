@@ -32,25 +32,27 @@ export default function AdminDashboard() {
 
   const [tutors, setTutors] = useState<Tutor[]>(TUTORS);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [authChecked, setAuthChecked] = useState(false);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     const rawUser = localStorage.getItem("tutorconnect_user");
-
     if (!rawUser) {
       router.replace("/login");
       return;
     }
-
     try {
       const user = JSON.parse(rawUser);
-
       if (user.role !== "admin") {
         router.replace("/");
+      } else {
+        setAuthChecked(true);
       }
     } catch {
       router.replace("/login");
     }
   }, [router]);
+
   useEffect(() => {
     fetch("/api/bookings")
       .then((res) => res.json())
@@ -82,6 +84,14 @@ export default function AdminDashboard() {
   }
 
   const maxCount = Math.max(1, ...bookingBreakdown.map((b) => b.count));
+
+  if (!authChecked) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-slate-400">Checking authentication…</p>
+      </div>
+    );
+  }
 
   return (
     <DashboardShell

@@ -1,11 +1,4 @@
-/**
- * In-memory auth fallback store.
- * ---------------------------------------------------------------------------
- * Used ONLY when DATABASE_URL is not configured, so the product can be fully
- * demoed without a live Neon database. Data resets on cold start / redeploy.
- * When DATABASE_URL is present, app/api/auth/route.ts reads & writes the
- * real `users` table in Postgres instead of this store.
- */
+import bcrypt from "bcryptjs";
 import type { UserRole } from "./types";
 
 export interface StoredUser {
@@ -27,6 +20,14 @@ declare global {
 export function getUserStore(): Map<string, StoredUser> {
   if (!global.__tutorconnect_users__) {
     global.__tutorconnect_users__ = new Map();
+    global.__tutorconnect_users__.set("admin@tutorconnect.ng", {
+      id: "admin_demo",
+      email: "admin@tutorconnect.ng",
+      passwordHash: bcrypt.hashSync("admin123", 10),
+      fullName: "Admin User",
+      role: "admin",
+      createdAt: new Date().toISOString(),
+    });
   }
   return global.__tutorconnect_users__;
 }

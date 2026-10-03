@@ -92,7 +92,9 @@ export default function LoginPage() {
           </Link>
         </p>
         <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-center text-xs text-amber-700">
-          Demo mode: if no database is connected, sign up first to create a demo session.
+          Demo mode: sign up to create a demo account, or use{" "}
+          <span className="font-semibold">admin@tutorconnect.ng</span> /{" "}
+          <span className="font-semibold">admin123</span> for the admin panel.
         </p>
       </div>
     </main>

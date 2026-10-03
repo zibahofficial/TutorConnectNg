@@ -164,7 +164,37 @@ return NextResponse.json({ token, user });
         user: { id: user.id, email, full_name: user.fullName, role: user.role },
         demo: true,
       });
-    }
+     }
+
+     if (action === "delete_account") {
+       const userEmail = email;
+       const store = getUserStore();
+       const user = store.get(userEmail);
+       if (!user) {
+         return NextResponse.json({ error: "Account not found." }, { status: 404 });
+       }
+
+       if (user.role === "admin") {
+         return NextResponse.json({ error: "Admin accounts cannot be deleted through this action." }, { status: 403 });
+       }
+
+       if (hasDatabase) {
+         try {
+           const typedSql = sql as unknown as SqlTag;
+           await typedSql`DELETE FROM bookings WHERE student_id = ${user.id}`;
+           await typedSql`DELETE FROM reviews WHERE student_id = ${user.id}`;
+           await typedSql`DELETE FROM tutor_availability WHERE tutor_id = ${user.id}`;
+           await typedSql`DELETE FROM tutor_subjects WHERE tutor_id = ${user.id}`;
+           await typedSql`DELETE FROM tutor_profiles WHERE user_id = ${user.id}`;
+           await typedSql`DELETE FROM users WHERE id = ${user.id}`;
+         } catch (err) {
+           console.error("Neon account deletion failed:", err);
+         }
+       }
+
+       store.delete(userEmail);
+       return NextResponse.json({ deleted: true, demo: true });
+     }
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (err) {

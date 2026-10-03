@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
 
   const newBooking: Booking = {
     id: randomUUID(),
+    studentId: (body.studentId as string) || undefined,
     studentName: (body.studentName as string) || "Guest Student",
     tutorId: body.tutorId as string,
     tutorName: (body.tutorName as string) || "Tutor",
@@ -149,5 +150,8 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Booking not found." }, { status: 404 });
   }
   booking.status = status;
+  if (meetingLink) {
+    booking.meetingLink = meetingLink;
+  }
   return NextResponse.json({ source: "mock", booking });
 }

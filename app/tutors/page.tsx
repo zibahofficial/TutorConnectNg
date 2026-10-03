@@ -314,8 +314,14 @@ function TutorsPageInner() {
 
       {/* Mobile filter drawer */}
       {filterOpen && (
-        <div className="fixed inset-0 z-[90] flex justify-end bg-slate-900/50 backdrop-blur-sm lg:hidden">
-          <div className="h-full w-full max-w-sm overflow-y-auto bg-white p-6 shadow-soft">
+        <div
+          className="fixed inset-0 z-[90] flex justify-end bg-slate-900/50 backdrop-blur-sm lg:hidden"
+          onClick={() => setFilterOpen(false)}
+        >
+          <div
+            className="h-full w-full max-w-sm overflow-y-auto bg-white p-6 shadow-soft"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-6 flex items-center justify-between">
               <h2 className="font-display text-lg font-bold text-navy-700">Filters</h2>
               <button

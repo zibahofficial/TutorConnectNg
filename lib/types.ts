@@ -61,6 +61,7 @@ export interface Tutor {
 
 export interface Booking {
   id: string;
+  studentId?: string;
   studentName: string;
   tutorId: string;
   tutorName: string;
