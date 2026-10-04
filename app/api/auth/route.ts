@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       const headline = (body.headline as string) || null;
       const bio = (body.bio as string) || null;
       const yearsExperience = body.yearsExperience ? Number(body.yearsExperience) : null;
-      const hourlyRate = body.hourlyRate ? Number(body.hourlyRate) : null;
+      const hourlyRate = body.hourlyRate ? Number(body.hourlyRate) : 0;
       const teachingMode = (body.teachingMode as string) || null;
       const subjects = (body.subjects as string[]) || [];
       const qualification = (body.qualification as string) || null;

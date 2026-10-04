@@ -91,11 +91,6 @@ export default function LoginPage() {
             Sign up for free
           </Link>
         </p>
-        <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-center text-xs text-amber-700">
-          Demo mode: sign up to create a demo account, or use{" "}
-          <span className="font-semibold">hephzibah2uche@gmail.com</span> /{" "}
-          <span className="font-semibold">Zibah2uche@2018</span> for the admin panel.
-        </p>
       </div>
     </main>
   );
