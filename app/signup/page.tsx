@@ -4,6 +4,7 @@ import { Suspense, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import LegalModal, { LegalLink, type LegalDoc } from "@/components/LegalModal";
 import {
   Briefcase,
   Camera,
@@ -105,17 +106,21 @@ const ALLOWED_PHOTO_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp
 
 /**
  * Terms/privacy consent checkbox shared by the student, tutor, and parent
- * signup flows. The document links open in a new tab (so the user never
- * loses form progress) and stop click propagation so tapping a link never
- * toggles the checkbox.
+ * signup flows. The document links open the full Terms of Service / Privacy
+ * Policy in an in-page dialog (works even where new-tab popups are blocked),
+ * and stop click propagation so tapping a link never toggles the checkbox.
  */
 function TermsConsent({
   checked,
   onChange,
+  onOpenDoc,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
+  onOpenDoc: (doc: LegalDoc) => void;
 }) {
+  const linkClass =
+    "font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700";
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
       <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-slate-600">
@@ -127,30 +132,18 @@ function TermsConsent({
         />
         <span>
           I agree to the TutorConnect{" "}
-          <Link
-            href="/terms"
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
-          >
+          <LegalLink doc="terms" onOpen={onOpenDoc} className={linkClass}>
             Terms of Service
-          </Link>{" "}
+          </LegalLink>{" "}
           and{" "}
-          <Link
-            href="/privacy"
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
-          >
+          <LegalLink doc="privacy" onOpen={onOpenDoc} className={linkClass}>
             Privacy Policy
-          </Link>
+          </LegalLink>
           , and confirm the information above is accurate.
         </span>
       </label>
       <p className="mt-1.5 text-[11px] text-slate-400">
-        Documents open in a new tab — your form progress is preserved.
+        Tap the underlined documents to read them in full — your form progress is preserved.
       </p>
     </div>
   );
@@ -196,6 +189,7 @@ const [learningMode, setLearningMode] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
 
   const isStudentFlow = role === "student";
 const isTutorFlow = role === "tutor";
@@ -413,6 +407,27 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
         <h1 className="text-center font-display text-2xl font-extrabold text-slate-900">Create your account</h1>
         <p className="mt-1 text-center text-sm text-slate-500">Join thousands of Nigerian learners &amp; tutors</p>
 
+        {/* Read-first notice — visible before any form input, for every role */}
+        <p className="mt-4 rounded-xl bg-navy-50 px-4 py-2.5 text-center text-xs leading-relaxed text-navy-800">
+          Before you continue, please read our{" "}
+          <LegalLink
+            doc="terms"
+            onOpen={setLegalDoc}
+            className="font-bold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Terms of Service
+          </LegalLink>{" "}
+          and{" "}
+          <LegalLink
+            doc="privacy"
+            onOpen={setLegalDoc}
+            className="font-bold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Privacy Policy
+          </LegalLink>
+          .
+        </p>
+
         <div className="mt-6 grid grid-cols-3 gap-2">
           {(["student", "parent", "tutor"] as UserRole[]).map((r) => (
             <button
@@ -607,7 +622,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 </div>
               )}
 
-              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} />
+              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} onOpenDoc={setLegalDoc} />
             </>
           )}
 
@@ -952,7 +967,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 </select>
               </div>
 
-              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} />
+              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} onOpenDoc={setLegalDoc} />
             </>
           )}
 {isParentFlow && (
@@ -1203,7 +1218,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
       </div>
     </div>
 
-    <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} />
+    <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} onOpenDoc={setLegalDoc} />
   </>
 )}
                
@@ -1223,6 +1238,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
           </Link>
         </p>
       </div>
+      <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
     </main>
   );
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { GraduationCap, Loader2, Lock, Mail } from "lucide-react";
+import LegalModal, { LegalLink, type LegalDoc } from "@/components/LegalModal";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -91,7 +93,29 @@ export default function LoginPage() {
             Sign up for free
           </Link>
         </p>
+
+        <p className="mt-4 border-t border-slate-100 pt-4 text-center text-xs leading-relaxed text-slate-400">
+          By logging in, you continue to accept our{" "}
+          <LegalLink
+            doc="terms"
+            onOpen={setLegalDoc}
+            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Terms of Service
+          </LegalLink>{" "}
+          and{" "}
+          <LegalLink
+            doc="privacy"
+            onOpen={setLegalDoc}
+            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Privacy Policy
+          </LegalLink>
+          .
+        </p>
       </div>
+
+      <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
     </main>
   );
 }
