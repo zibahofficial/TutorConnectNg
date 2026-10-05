@@ -3,7 +3,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
-import { getUserStore, getChildStore, getSavedTutorStore, getAvailabilityStore, verifyToken, DAY_TO_INDEX, INDEX_TO_DAY, type StoredUser, type Child, type SavedTutor, type AvailabilitySlot } from "@/lib/auth-store";
+import { getUserStore, getChildStore, getSavedTutorStore, getAvailabilityStore, getDocumentStore, getVerificationStore, verifyToken, DAY_TO_INDEX, INDEX_TO_DAY, type StoredUser, type Child, type SavedTutor, type AvailabilitySlot, type TutorDocument, type TutorVerification } from "@/lib/auth-store";
+import { TUTOR_DOCUMENT_TYPE_VALUES } from "@/lib/tutor-options";
 import type { UserRole } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -393,8 +394,45 @@ export async function POST(req: NextRequest) {
       const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
       const user = auth.user;
+
+      // Credential documents + verification status (Neon-first so uploads
+      // survive server restarts in database mode; in-memory fallback).
+      let documents = getDocumentStore().get(user.id) || [];
+      let verification: TutorVerification | null = getVerificationStore().find((v) => v.userId === user.id) || null;
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const docRows = await typedSql`
+            SELECT id, doc_type, file_name, file_data, created_at FROM tutor_documents WHERE user_id = ${user.id} ORDER BY created_at
+          `;
+          if (docRows.length) {
+            documents = docRows.map((r) => ({
+              id: String(r.id),
+              type: String(r.doc_type),
+              name: String(r.file_name),
+              dataUrl: String(r.file_data),
+              uploadedAt: new Date(String(r.created_at)).toISOString(),
+            }));
+            getDocumentStore().set(user.id, documents);
+          }
+          const verifRows = await typedSql`
+            SELECT status, applied_at, reviewed_at FROM tutor_verifications WHERE user_id = ${user.id} LIMIT 1
+          `;
+          if (verifRows.length) {
+            verification = {
+              userId: user.id,
+              status: verifRows[0].status as TutorVerification["status"],
+              appliedAt: new Date(String(verifRows[0].applied_at)).toISOString(),
+              reviewedAt: verifRows[0].reviewed_at ? new Date(String(verifRows[0].reviewed_at)).toISOString() : undefined,
+            };
+          }
+        } catch (err) {
+          console.error("Neon credential read failed:", err);
+        }
+      }
+
       return NextResponse.json({
-        user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
+        user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification, documents, verification },
       });
     }
 
@@ -472,6 +510,260 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ success: true, isVerified });
+    }
+
+    if (action === "add_document") {
+      const auth = await getUserFromRequest(req, ["tutor"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const type = (body.type as string) || "";
+      const name = (body.name as string) || "";
+      const dataUrl = (body.dataUrl as string) || "";
+
+      // The document type dropdown is compulsory and must be one of the
+      // known options (Government-issued ID, Academic credential, ...).
+      if (!TUTOR_DOCUMENT_TYPE_VALUES.includes(type)) {
+        return NextResponse.json({ error: "Please select a document type from the list." }, { status: 400 });
+      }
+      if (!name) return NextResponse.json({ error: "Document name is required." }, { status: 400 });
+      if (!dataUrl.startsWith("data:image/")) {
+        return NextResponse.json({ error: "Only photo uploads from your gallery are supported." }, { status: 400 });
+      }
+      if (dataUrl.length > 2_500_000) {
+        return NextResponse.json({ error: "That photo is too large. Please choose a smaller one." }, { status: 413 });
+      }
+
+      const doc: TutorDocument = {
+        id: randomUUID(),
+        type,
+        name,
+        dataUrl,
+        uploadedAt: new Date().toISOString(),
+      };
+      const docStore = getDocumentStore();
+      const docs = docStore.get(auth.user.id) || [];
+      docs.push(doc);
+      docStore.set(auth.user.id, docs);
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const inserted = await typedSql`
+            INSERT INTO tutor_documents (user_id, doc_type, file_name, file_data)
+            VALUES (${auth.user.id}, ${type}, ${name}, ${dataUrl})
+            RETURNING id
+          `;
+          doc.id = (inserted[0] as Record<string, unknown>).id as string;
+        } catch (err) {
+          console.error("Neon document insert failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true, document: doc }, { status: 201 });
+    }
+
+    if (action === "remove_document") {
+      const auth = await getUserFromRequest(req, ["tutor"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const documentId = (body.documentId as string) || "";
+      if (!documentId) return NextResponse.json({ error: "documentId is required." }, { status: 400 });
+
+      const docStore = getDocumentStore();
+      const docs = docStore.get(auth.user.id) || [];
+      const idx = docs.findIndex((d) => d.id === documentId);
+      if (idx < 0) return NextResponse.json({ error: "Document not found." }, { status: 404 });
+      docs.splice(idx, 1);
+      docStore.set(auth.user.id, docs);
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          await typedSql`DELETE FROM tutor_documents WHERE id = ${documentId} AND user_id = ${auth.user.id}`;
+        } catch (err) {
+          console.error("Neon document delete failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "apply_verification") {
+      const auth = await getUserFromRequest(req, ["tutor"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const docStore = getDocumentStore();
+      let docs = docStore.get(auth.user.id) || [];
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT id, doc_type, file_name, file_data, created_at FROM tutor_documents WHERE user_id = ${auth.user.id} ORDER BY created_at
+          `;
+          if (rows.length) {
+            docs = rows.map((r) => ({
+              id: String(r.id),
+              type: String(r.doc_type),
+              name: String(r.file_name),
+              dataUrl: String(r.file_data),
+              uploadedAt: new Date(String(r.created_at)).toISOString(),
+            }));
+            docStore.set(auth.user.id, docs);
+          }
+        } catch (err) {
+          console.error("Neon document read failed:", err);
+        }
+      }
+
+      // A valid application needs a government-issued ID AND at least one
+      // academic credential, both chosen from the compulsory type dropdown.
+      const hasId = docs.some((d) => d.type === "Government-issued ID");
+      const hasCredential = docs.some((d) => d.type === "Academic credential");
+      if (!hasId || !hasCredential) {
+        return NextResponse.json(
+          { error: "Please upload at least one government-issued ID and one academic credential before applying." },
+          { status: 400 }
+        );
+      }
+
+      const verifStore = getVerificationStore();
+      const existing = verifStore.find((v) => v.userId === auth.user.id);
+      if (existing?.status === "pending") {
+        return NextResponse.json({ error: "Your application is already awaiting admin review." }, { status: 409 });
+      }
+      if (existing?.status === "approved") {
+        return NextResponse.json({ error: "Your credentials have already been approved." }, { status: 409 });
+      }
+      const appliedAt = new Date().toISOString();
+      const record: TutorVerification = existing ?? { userId: auth.user.id, status: "pending", appliedAt };
+      if (existing) {
+        existing.status = "pending";
+        existing.appliedAt = appliedAt;
+        existing.reviewedAt = undefined;
+      } else {
+        verifStore.push(record);
+      }
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          await typedSql`
+            INSERT INTO tutor_verifications (user_id, status, applied_at)
+            VALUES (${auth.user.id}, 'pending', NOW())
+            ON CONFLICT (user_id) DO UPDATE SET status = 'pending', applied_at = NOW(), reviewed_at = NULL
+          `;
+        } catch (err) {
+          console.error("Neon verification upsert failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true, verification: record });
+    }
+
+    if (action === "review_verification") {
+      const auth = await getUserFromRequest(req, ["admin"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const userId = (body.userId as string) || "";
+      const decision = (body.decision as string) || "";
+      if (!userId) return NextResponse.json({ error: "userId is required." }, { status: 400 });
+      if (decision !== "approved" && decision !== "declined") {
+        return NextResponse.json({ error: "decision must be 'approved' or 'declined'." }, { status: 400 });
+      }
+
+      const verifStore = getVerificationStore();
+      let record = verifStore.find((v) => v.userId === userId);
+      if (!record) {
+        record = { userId, status: "pending", appliedAt: new Date().toISOString() };
+        verifStore.push(record);
+      }
+      record.status = decision;
+      record.reviewedAt = new Date().toISOString();
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          await typedSql`
+            INSERT INTO tutor_verifications (user_id, status, applied_at, reviewed_at)
+            VALUES (${userId}, ${decision}, NOW(), NOW())
+            ON CONFLICT (user_id) DO UPDATE SET status = ${decision}, reviewed_at = NOW()
+          `;
+          // Keep tutor_profiles in sync (schema uses 'rejected' for declined).
+          const profileStatus = decision === "approved" ? "approved" : "rejected";
+          await typedSql`
+            UPDATE tutor_profiles SET verification_status = ${profileStatus}, is_verified = ${decision === "approved"}
+            WHERE user_id = ${userId}
+          `;
+        } catch (err) {
+          console.error("Neon verification review failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true, verification: record });
+    }
+
+    if (action === "verification_applications") {
+      const auth = await getUserFromRequest(req, ["admin"]);
+      if (auth instanceof NextResponse) return auth;
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT tv.user_id, tv.status, tv.applied_at, tv.reviewed_at, u.full_name, u.email
+            FROM tutor_verifications tv
+            JOIN users u ON u.id = tv.user_id
+            ORDER BY tv.applied_at DESC
+            LIMIT 100
+          `;
+          const docRows = await typedSql`
+            SELECT id, user_id, doc_type, file_name, file_data FROM tutor_documents ORDER BY created_at
+          `;
+          const docsByUser = new Map<string, TutorDocument[]>();
+          for (const d of docRows) {
+            const uid = String(d.user_id);
+            const list = docsByUser.get(uid) || [];
+            list.push({
+              id: String(d.id),
+              type: String(d.doc_type),
+              name: String(d.file_name),
+              dataUrl: String(d.file_data),
+              uploadedAt: "",
+            });
+            docsByUser.set(uid, list);
+          }
+          return NextResponse.json({
+            source: "neon",
+            applications: rows.map((r) => ({
+              userId: String(r.user_id),
+              fullName: String(r.full_name),
+              email: String(r.email),
+              status: r.status,
+              appliedAt: new Date(String(r.applied_at)).toISOString(),
+              reviewedAt: r.reviewed_at ? new Date(String(r.reviewed_at)).toISOString() : null,
+              documents: docsByUser.get(String(r.user_id)) || [],
+            })),
+          });
+        } catch (err) {
+          console.error("Neon verification applications failed:", err);
+        }
+      }
+
+      const docStore = getDocumentStore();
+      const userStore = getUserStore();
+      const applications = getVerificationStore().map((v) => {
+        const u = Array.from(userStore.values()).find((x) => x.id === v.userId);
+        return {
+          userId: v.userId,
+          fullName: u?.fullName || "Tutor",
+          email: u?.email || "",
+          status: v.status,
+          appliedAt: v.appliedAt,
+          reviewedAt: v.reviewedAt ?? null,
+          documents: docStore.get(v.userId) || [],
+        };
+      });
+      return NextResponse.json({ source: "mock", applications });
     }
 
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Calendar,
@@ -10,13 +10,15 @@ import {
   MapPin,
   Plus,
   Save,
+  ShieldAlert,
+  ShieldCheck,
   Trash2,
-  Wallet,
+  Upload,
   X,
 } from "lucide-react";
 import DashboardShell from "@/components/DashboardShell";
 import PrivateChat from "@/components/PrivateChat";
-import { TUTOR_HEADLINES, TUTOR_STATES, QUALIFICATIONS, TEACHING_MODES } from "@/lib/tutor-options";
+import { TUTOR_HEADLINES, TUTOR_STATES, QUALIFICATIONS, TEACHING_MODES, TUTOR_DOCUMENT_TYPES } from "@/lib/tutor-options";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import { getTutorById } from "@/lib/mock-data";
@@ -105,6 +107,19 @@ export default function TutorDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Credentials & Verification: documents uploaded from the tutor's gallery
+  // and their verification application to the admin.
+  const [documents, setDocuments] = useState<Array<{ id: string; type: string; name: string; dataUrl: string; uploadedAt: string }>>([]);
+  const [verification, setVerification] = useState<{ status: "pending" | "approved" | "declined"; appliedAt: string } | null>(null);
+  const [docType, setDocType] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [docBusy, setDocBusy] = useState(false);
+  const [docError, setDocError] = useState("");
+  const [docDone, setDocDone] = useState(false);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyError, setApplyError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // My Profile: load the tutor's full profile so it can be edited
   const [profileForm, setProfileForm] = useState<{
     fullName: string;
@@ -148,6 +163,8 @@ export default function TutorDashboard() {
       .then((data) => {
         const u = data?.user;
         if (!u) return;
+        setDocuments(Array.isArray(u.documents) ? u.documents : []);
+        setVerification(u.verification ?? null);
         setProfileForm({
           fullName: u.full_name || "",
           phone: u.phone || "",
@@ -163,6 +180,110 @@ export default function TutorDashboard() {
       })
       .catch(() => {});
   }, [authChecked, authUser]);
+
+  // Shrink a gallery photo in the browser before uploading so requests stay small.
+  function compressImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read that photo."));
+      reader.onload = () => {
+        const img = document.createElement("img");
+        img.onerror = () => reject(new Error("That file is not a valid photo."));
+        img.onload = () => {
+          const maxSide = 1280;
+          const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return reject(new Error("Could not process that photo."));
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.75));
+        };
+        img.src = String(reader.result);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadDocument(e: React.FormEvent) {
+    e.preventDefault();
+    setDocError("");
+    // The document type dropdown is compulsory.
+    if (!docType) return setDocError("Please select the document type — it is required.");
+    if (!docFile) return setDocError("Please choose a photo of the document from your gallery.");
+    setDocBusy(true);
+    try {
+      const dataUrl = await compressImage(docFile);
+      const token = localStorage.getItem("tutorconnect_token") || "";
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "add_document", type: docType, name: docFile.name, dataUrl }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.document) throw new Error(data?.error || "Upload failed. Please try again.");
+      setDocuments((prev) => [...prev, data.document]);
+      setDocType("");
+      setDocFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setDocDone(true);
+      setTimeout(() => setDocDone(false), 2500);
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : "Upload failed. Please try again.");
+    } finally {
+      setDocBusy(false);
+    }
+  }
+
+  async function removeDocument(id: string) {
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "remove_document", documentId: id }),
+      });
+      if (res.ok) setDocuments((prev) => prev.filter((d) => d.id !== id));
+    } catch {
+      // ignore — list stays as-is if the request fails
+    }
+  }
+
+  async function applyToAdmin() {
+    setApplyError("");
+    if (!documents.some((d) => d.type === "Government-issued ID")) {
+      return setApplyError("Please upload your government-issued ID before applying.");
+    }
+    if (!documents.some((d) => d.type === "Academic credential")) {
+      return setApplyError("Please upload at least one academic credential before applying.");
+    }
+    setApplyBusy(true);
+    try {
+      const token = localStorage.getItem("tutorconnect_token") || "";
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "apply_verification" }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.verification) throw new Error(data?.error || "Could not submit your application.");
+      setVerification(data.verification);
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : "Could not submit your application.");
+    } finally {
+      setApplyBusy(false);
+    }
+  }
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -225,8 +346,7 @@ export default function TutorDashboard() {
     const pending = bookings.filter((b) => b.status === "pending").length;
     const upcoming = bookings.filter((b) => b.status === "accepted").length;
     const completed = bookings.filter((b) => b.status === "completed");
-    const earnings = completed.reduce((sum, b) => sum + b.totalPrice, 0);
-    return { pending, upcoming, completed: completed.length, earnings };
+    return { pending, upcoming, completed: completed.length };
   }, [bookings]);
 
   async function updateStatus(
@@ -317,13 +437,12 @@ export default function TutorDashboard() {
     <>
     <DashboardShell
       title={`Welcome back, ${(authUser?.full_name ?? "Tutor").split(" ")[0]}`}
-      subtitle="Manage booking requests, your weekly availability, and track your earnings."
+      subtitle="Manage booking requests, your weekly availability, and your credentials."
     >
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard icon={Clock3} label="Pending Requests" value={String(stats.pending)} accent="amber" />
         <StatCard icon={Calendar} label="Upcoming Sessions" value={String(stats.upcoming)} accent="navy" />
         <StatCard icon={Check} label="Completed Sessions" value={String(stats.completed)} accent="emerald" />
-        <StatCard icon={Wallet} label="Total Earnings" value={formatNaira(stats.earnings)} accent="rose" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
@@ -610,6 +729,147 @@ export default function TutorDashboard() {
             </button>
           </div>
         </form>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display font-bold text-slate-900">Credentials &amp; Verification</h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Upload photos of your credentials from your gallery, then apply for admin verification.
+            </p>
+          </div>
+          {verification?.status === "approved" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+              <ShieldCheck size={13} /> Verified
+            </span>
+          ) : verification?.status === "pending" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">
+              <ShieldAlert size={13} /> Pending Review
+            </span>
+          ) : verification?.status === "declined" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600">
+              <ShieldAlert size={13} /> Declined
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500">
+              <ShieldAlert size={13} /> Not Submitted
+            </span>
+          )}
+        </div>
+
+        {verification?.status === "pending" && (
+          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+            Your application is being reviewed by the admin. The outcome will appear here.
+          </p>
+        )}
+        {verification?.status === "approved" && (
+          <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            Your credentials have been approved by the admin — you are a verified tutor!
+          </p>
+        )}
+        {verification?.status === "declined" && (
+          <p className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">
+            Your application was declined. Please review your documents and apply again.
+          </p>
+        )}
+
+        {documents.length > 0 && (
+          <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {documents.map((d) => (
+              <li key={d.id} className="rounded-xl border border-slate-200 p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded data URL preview */}
+                <img src={d.dataUrl} alt={d.name} className="h-28 w-full rounded-lg bg-slate-100 object-cover" />
+                <div className="mt-2 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold text-slate-700">{d.type}</p>
+                    <a href={d.dataUrl} download={d.name} className="block truncate text-[11px] font-semibold text-navy-700 hover:underline">
+                      {d.name}
+                    </a>
+                  </div>
+                  {verification?.status !== "pending" && verification?.status !== "approved" && (
+                    <button
+                      type="button"
+                      onClick={() => removeDocument(d.id)}
+                      className="rounded-lg bg-rose-50 p-1.5 text-rose-500 transition-colors hover:bg-rose-100"
+                      aria-label={`Remove ${d.name}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form onSubmit={uploadDocument} className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Document Type <span className="text-rose-500">*</span>
+            </label>
+            <select
+              required
+              value={docType}
+              onChange={(e) => setDocType(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            >
+              <option value="">Select document type…</option>
+              {TUTOR_DOCUMENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.value} ({t.hint})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Photo of the Document <span className="text-rose-500">*</span>
+            </label>
+            <input
+              ref={fileInputRef}
+              required
+              type="file"
+              accept="image/*"
+              onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-navy-700 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-white"
+            />
+            <p className="mt-1.5 text-[11px] text-slate-400">Choose a clear photo from your gallery (NIN slip, certificate, etc.).</p>
+          </div>
+          {docError && <p className="text-sm font-semibold text-rose-500 sm:col-span-2">{docError}</p>}
+          {docDone && <p className="text-sm font-semibold text-emerald-600 sm:col-span-2">Document uploaded. Add more, or apply for verification below.</p>}
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={docBusy} className="btn-primary disabled:opacity-60">
+              {docBusy ? "Uploading…" : (<><Upload size={16} /> Upload Document</>)}
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
+          <p className="text-xs text-slate-500">
+            To apply you need at least one <span className="font-bold text-slate-700">government-issued ID</span> and one{" "}
+            <span className="font-bold text-slate-700">academic credential</span>.
+          </p>
+          {verification?.status === "approved" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+              <ShieldCheck size={13} /> Approved
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={applyToAdmin}
+              disabled={applyBusy || verification?.status === "pending"}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-navy-700 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-navy-800 disabled:opacity-60"
+            >
+              {verification?.status === "pending" ? (
+                (<><ShieldAlert size={16} /> Awaiting Admin Review…</>)
+              ) : (
+                (<><ShieldCheck size={16} /> Apply to Admin for Verification</>)
+              )}
+            </button>
+          )}
+        </div>
+        {applyError && <p className="mt-2 text-sm font-semibold text-rose-500">{applyError}</p>}
       </div>
 
       <div className="mt-6">

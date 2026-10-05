@@ -210,3 +210,26 @@ FOR EACH ROW EXECUTE FUNCTION fn_touch_updated_at();
 --      INSERT INTO users (email, password_hash, full_name, role)
 --      VALUES ('you@gmail.com', '<bcrypt hash>', 'Your Name', 'admin');
 --      (generate the hash with: node -e "console.log(require('bcryptjs').hashSync('YOUR_PASSWORD', 10))")
+
+-- -------------------------------------------------------------------------
+-- TUTOR CREDENTIAL DOCUMENTS & VERIFICATION APPLICATIONS
+-- -------------------------------------------------------------------------
+-- Photos of credentials uploaded by tutors from their gallery, and their
+-- applications for admin verification.
+CREATE TABLE IF NOT EXISTS tutor_documents (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  doc_type    VARCHAR(60) NOT NULL,
+  file_name   VARCHAR(255) NOT NULL,
+  file_data   TEXT NOT NULL, -- base64 data URL of the (client-compressed) image
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tutor_documents_user ON tutor_documents(user_id);
+
+CREATE TABLE IF NOT EXISTS tutor_verifications (
+  user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  status      VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending | approved | declined
+  applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ
+);

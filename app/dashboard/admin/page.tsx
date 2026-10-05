@@ -41,6 +41,17 @@ export default function AdminDashboard() {
   const [authChecked, setAuthChecked] = useState(false);
   const [adminId, setAdminId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [applications, setApplications] = useState<Array<{
+    userId: string;
+    fullName: string;
+    email: string;
+    status: string;
+    appliedAt: string;
+    reviewedAt: string | null;
+    documents: Array<{ id: string; type: string; name: string; dataUrl: string }>;
+  }>>([]);
+  const [appsLoading, setAppsLoading] = useState(true);
+  const [reviewingId, setReviewingId] = useState("");
 
   useEffect(() => {
     const rawUser = localStorage.getItem("tutorconnect_user");
@@ -82,6 +93,25 @@ export default function AdminDashboard() {
   }, [authChecked]);
 
   useEffect(() => {
+    if (!authChecked) return;
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ action: "verification_applications" }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setApplications(data.applications ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setAppsLoading(false));
+  }, [authChecked]);
+
+  useEffect(() => {
     fetch("/api/bookings")
       .then((res) => res.json())
       .then((data) => setBookings(data.bookings ?? []))
@@ -104,6 +134,30 @@ export default function AdminDashboard() {
       count: bookings.filter((b) => b.status === status).length,
     }));
   }, [bookings]);
+
+  async function reviewApplication(userId: string, decision: "approved" | "declined") {
+    setReviewingId(userId);
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "review_verification", userId, decision }),
+      });
+      if (res.ok) {
+        setApplications((prev) =>
+          prev.map((a) => (a.userId === userId ? { ...a, status: decision, reviewedAt: new Date().toISOString() } : a))
+        );
+      }
+    } catch {
+      // network error — keep current list
+    } finally {
+      setReviewingId("");
+    }
+  }
 
   async function toggleVerification(id: string) {
     const currentTutor = tutors.find((t) => t.id === id);
@@ -153,6 +207,85 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <h2 className="font-display font-bold text-slate-900">Credential Applications</h2>
+            <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+              {applications.filter((a) => a.status === "pending").length} pending
+            </span>
+          </div>
+          {appsLoading ? (
+            <p className="px-6 py-8 text-sm text-slate-400">Loading credential applications…</p>
+          ) : applications.length === 0 ? (
+            <p className="px-6 py-8 text-sm text-slate-400">No tutors have applied for verification yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {applications.map((a) => (
+                <li key={a.userId} className="px-6 py-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{a.fullName}</p>
+                      <p className="text-xs text-slate-500">{a.email}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        Applied {new Date(a.appliedAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+                      </p>
+                    </div>
+                    {a.status === "approved" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+                        <ShieldCheck size={13} /> Approved
+                      </span>
+                    ) : a.status === "declined" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600">
+                        <Ban size={13} /> Declined
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">
+                        <ShieldAlert size={13} /> Pending Review
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {a.documents.map((d) => (
+                      <div key={d.id} className="w-36 rounded-xl border border-slate-200 p-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded data URL preview */}
+                        <img src={d.dataUrl} alt={d.name} className="h-20 w-full rounded-lg bg-slate-100 object-cover" />
+                        <p className="mt-1.5 truncate text-[11px] font-bold text-slate-700">{d.type}</p>
+                        <a href={d.dataUrl} download={d.name} className="mt-0.5 block truncate text-[11px] font-semibold text-navy-700 hover:underline">
+                          View / download
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+
+                  {a.status === "pending" ? (
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={() => reviewApplication(a.userId, "approved")}
+                        disabled={reviewingId === a.userId}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        <ShieldCheck size={13} /> Approve
+                      </button>
+                      <button
+                        onClick={() => reviewApplication(a.userId, "declined")}
+                        disabled={reviewingId === a.userId}
+                        className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-4 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-60"
+                      >
+                        <Ban size={13} /> Decline
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                      Reviewed{a.reviewedAt ? ` — ${new Date(a.reviewedAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}` : ""}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
           <div className="border-b border-slate-100 px-6 py-4">
             <h2 className="font-display font-bold text-slate-900">Tutor Verification Queue</h2>

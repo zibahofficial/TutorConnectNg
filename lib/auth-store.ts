@@ -47,11 +47,28 @@ export interface AvailabilitySlot {
   end: string;
 }
 
+export interface TutorDocument {
+  id: string;
+  type: string;
+  name: string;
+  dataUrl: string;
+  uploadedAt: string;
+}
+
+export interface TutorVerification {
+  userId: string;
+  status: "pending" | "approved" | "declined";
+  appliedAt: string;
+  reviewedAt?: string;
+}
+
 declare global {
   var __tutorconnect_users__: Map<string, StoredUser> | undefined;
   var __tutorconnect_children__: Map<string, Child[]> | undefined;
   var __tutorconnect_saved__: SavedTutor[] | undefined;
   var __tutorconnect_availability__: AvailabilitySlot[] | undefined;
+  var __tutorconnect_documents__: Map<string, TutorDocument[]> | undefined;
+  var __tutorconnect_verifications__: TutorVerification[] | undefined;
   var __tutorconnect_reviews__: Record<string, Review[]> | undefined;
 }
 
@@ -112,3 +129,17 @@ export const DAY_TO_INDEX: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Th
 
 /** Reverse of {@link DAY_TO_INDEX}: integer day (0=Monday … 6=Sunday) → abbreviation. */
 export const INDEX_TO_DAY: string[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export function getDocumentStore(): Map<string, TutorDocument[]> {
+  if (!global.__tutorconnect_documents__) {
+    global.__tutorconnect_documents__ = new Map();
+  }
+  return global.__tutorconnect_documents__;
+}
+
+export function getVerificationStore(): TutorVerification[] {
+  if (!global.__tutorconnect_verifications__) {
+    global.__tutorconnect_verifications__ = [];
+  }
+  return global.__tutorconnect_verifications__;
+}

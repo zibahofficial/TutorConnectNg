@@ -45,3 +45,12 @@ export const QUALIFICATIONS = [
 ];
 
 export const TEACHING_MODES = ["Online & in person", "Online only", "In person only"];
+
+export const TUTOR_DOCUMENT_TYPES = [
+  { value: "Government-issued ID", hint: "NIN slip, voter's card, driver's licence or international passport" },
+  { value: "Academic credential", hint: "degree, HND, NCE, diploma or transcript" },
+  { value: "Professional certificate", hint: "e.g. TRCN registration certificate" },
+  { value: "Other supporting document", hint: "any other proof of your expertise" },
+];
+
+export const TUTOR_DOCUMENT_TYPE_VALUES = TUTOR_DOCUMENT_TYPES.map((t) => t.value);
