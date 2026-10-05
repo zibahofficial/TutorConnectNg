@@ -150,13 +150,70 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { id, status, meetingLink } = body as {
-  id: string;
-  status: Booking["status"];
-  meetingLink?: string;
-};
-  if (!id || !status) {
-    return NextResponse.json({ error: "id and status are required." }, { status: 400 });
+  const { id, status, meetingLink, edit } = body as {
+    id: string;
+    status?: Booking["status"];
+    meetingLink?: string;
+    edit?: Partial<Pick<Booking, "subject" | "gradeLevel" | "scheduledDate" | "startTime" | "endTime" | "sessionMode" | "notes" | "totalPrice">>;
+  };
+  if (!id) {
+    return NextResponse.json({ error: "id is required." }, { status: 400 });
+  }
+  if (!status && !edit) {
+    return NextResponse.json({ error: "id and status (or edit) are required." }, { status: 400 });
+  }
+
+  // Edit a booking's details — only allowed while the request is still
+  // pending (not yet accepted/approved by the tutor).
+  if (edit) {
+    if (hasDatabase) {
+      try {
+        const typedSql = sql as unknown as SqlTag;
+        const updated = await typedSql`
+  UPDATE bookings
+  SET
+    subject = COALESCE(${edit.subject ?? null}, subject),
+    grade_level = COALESCE(${edit.gradeLevel ?? null}, grade_level),
+    scheduled_date = COALESCE(${edit.scheduledDate ?? null}, scheduled_date),
+    start_time = COALESCE(${edit.startTime ?? null}, start_time),
+    end_time = COALESCE(${edit.endTime ?? null}, end_time),
+    session_mode = COALESCE(${edit.sessionMode ?? null}, session_mode),
+    notes = COALESCE(${edit.notes ?? null}, notes),
+    total_price = COALESCE(${edit.totalPrice ?? null}, total_price)
+  WHERE id = ${id} AND status = 'pending'
+  RETURNING *
+`;
+        if (updated.length === 0) {
+          return NextResponse.json({ error: "Booking not found or no longer editable — only pending requests can be edited." }, { status: 409 });
+        }
+        return NextResponse.json({ source: "neon", booking: updated[0] });
+      } catch (err) {
+        console.error("Neon booking edit failed, falling back to in-memory store:", err);
+      }
+    }
+
+    const store = getBookingStore();
+    const booking = store.find((b) => b.id === id);
+    if (!booking) {
+      return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+    }
+    if (booking.status !== "pending") {
+      return NextResponse.json({ error: "Only pending requests can be edited — this booking has already been processed." }, { status: 409 });
+    }
+    if (edit.subject !== undefined) booking.subject = edit.subject;
+    if (edit.gradeLevel !== undefined) booking.gradeLevel = edit.gradeLevel;
+    if (edit.scheduledDate !== undefined) booking.scheduledDate = edit.scheduledDate;
+    if (edit.startTime !== undefined) booking.startTime = edit.startTime;
+    if (edit.endTime !== undefined) booking.endTime = edit.endTime;
+    if (edit.sessionMode !== undefined) booking.sessionMode = edit.sessionMode;
+    if (edit.notes !== undefined) booking.notes = edit.notes;
+    if (edit.totalPrice !== undefined) booking.totalPrice = edit.totalPrice;
+    return NextResponse.json({ source: "mock", booking });
+  }
+
+  // Status change path (accept / decline / cancel / complete)
+  if (!status) {
+    return NextResponse.json({ error: "status is required for status changes." }, { status: 400 });
   }
 
   if (hasDatabase) {

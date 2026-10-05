@@ -142,6 +142,25 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE INDEX IF NOT EXISTS idx_reviews_tutor ON reviews(tutor_id);
 
 -- -------------------------------------------------------------------------
+-- 7. PRIVATE CHAT MESSAGES (student ↔ tutor)
+-- -------------------------------------------------------------------------
+-- Party keys are opaque strings: a users.id, a mock tutor id (e.g. "t1") in
+-- demo mode, or a tutor_profiles.id. Threads are strictly the two parties,
+-- enforced by the /api/messages route (JWT-authenticated).
+CREATE TABLE IF NOT EXISTS messages (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_key     VARCHAR(255) NOT NULL,
+  sender_name    VARCHAR(150) NOT NULL,
+  recipient_key  VARCHAR(255) NOT NULL,
+  recipient_name VARCHAR(150) NOT NULL,
+  body           TEXT NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(sender_key, recipient_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_participant ON messages(recipient_key, created_at);
+
+-- -------------------------------------------------------------------------
 -- TRIGGERS: keep tutor_profiles.rating_avg / total_reviews in sync
 -- -------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_update_tutor_rating() RETURNS TRIGGER AS $$

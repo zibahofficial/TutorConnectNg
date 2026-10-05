@@ -10,14 +10,19 @@ import {
   CalendarClock,
   CheckCircle2,
   Heart,
+  Home,
   Laptop,
   LayoutGrid,
+  Lock,
+  LogOut,
   Mail,
   MapPin,
+  MessageCircle,
   MessageSquarePlus,
+  Pencil,
   Phone,
-  Receipt,
   Save,
+  Send,
   Star,
   User,
   Wallet,
@@ -29,16 +34,16 @@ import Footer from "@/components/Footer";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import { TUTORS } from "@/lib/mock-data";
-import type { Booking } from "@/lib/types";
+import type { Booking, ChatMessage } from "@/lib/types";
 
-type TabId = "overview" | "bookings" | "wishlist" | "certificates" | "payments" | "profile";
+type TabId = "overview" | "bookings" | "wishlist" | "certificates" | "chat" | "profile";
 
 const NAV_ITEMS: { id: TabId; label: string; icon: typeof LayoutGrid }[] = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
   { id: "bookings", label: "My Bookings", icon: BookOpen },
   { id: "wishlist", label: "Saved Tutors", icon: Heart },
   { id: "certificates", label: "Certificates", icon: Award },
-  { id: "payments", label: "Payment History", icon: Receipt },
+  { id: "chat", label: "Chat with Tutors", icon: MessageCircle },
   { id: "profile", label: "Profile", icon: User },
 ];
 
@@ -87,6 +92,19 @@ export default function StudentDashboard() {
   const [reviewedIds, setReviewedIds] = useState<string[]>([]);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+
+  // Booking edit / cancel (pending requests only)
+  const [editTarget, setEditTarget] = useState<Booking | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
+  const [bookingActionBusy, setBookingActionBusy] = useState(false);
+
+  // Private tutor chat
+  const [chatPartners, setChatPartners] = useState<{ key: string; name: string }[]>([]);
+  const [activeChat, setActiveChat] = useState<{ key: string; name: string } | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
 
   const [authChecked, setAuthChecked] = useState(false);
 
@@ -145,6 +163,56 @@ export default function StudentDashboard() {
       })
       .finally(() => setLoading(false));
   }, [authChecked, user]);
+
+  // Chat partners = tutors whose booking with this student has been approved
+  // (accepted), plus anyone the student already has a conversation with.
+  useEffect(() => {
+    if (!authChecked || !user) return;
+    const byKey = new Map<string, string>();
+    for (const b of bookings) {
+      if ((b.status === "accepted" || b.status === "completed") && b.tutorId) {
+        byKey.set(b.tutorId, b.tutorName || "Tutor");
+      }
+    }
+    const merge = (extra: { partnerKey: string; partnerName: string }[]) => {
+      for (const c of extra) {
+        if (!byKey.has(c.partnerKey)) byKey.set(c.partnerKey, c.partnerName || "Tutor");
+      }
+      const merged = Array.from(byKey, ([key, name]) => ({ key, name }));
+      setChatPartners(merged);
+      setActiveChat((prev) => (prev && merged.some((p) => p.key === prev.key) ? prev : merged[0] ?? null));
+    };
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    fetch(`/api/messages?conversations=1${token ? `&token=${encodeURIComponent(token)}` : ""}`)
+      .then((res) => (res.ok ? res.json() : { conversations: [] }))
+      .then((data) => merge(data.conversations ?? []))
+      .catch(() => merge([]));
+  }, [authChecked, user, bookings]);
+
+  // Load the active chat thread and poll for new messages every 5 seconds.
+  useEffect(() => {
+    if (!authChecked || !user || !activeChat) return;
+    let active = true;
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    const load = () =>
+      fetch(`/api/messages?with=${encodeURIComponent(activeChat.key)}${token ? `&token=${encodeURIComponent(token)}` : ""}`)
+        .then((res) => (res.ok ? res.json() : { messages: [] }))
+        .then((data) => {
+          if (active && Array.isArray(data.messages)) setChatMessages(data.messages);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (active) setChatLoading(false);
+        });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- flagging loading state while initiating the thread fetch
+    setChatLoading(true);
+    load();
+    const interval = setInterval(load, 5000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [authChecked, user, activeChat]);
 
   const stats = useMemo(() => {
     const pending = bookings.filter((b) => b.status === "pending").length;
@@ -223,6 +291,80 @@ export default function StudentDashboard() {
     setComment("");
   }
 
+  async function sendChatMessage() {
+    if (!activeChat || !chatInput.trim() || chatSending) return;
+    setChatSending(true);
+    try {
+      const token = localStorage.getItem("tutorconnect_token") || "";
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ to: activeChat.key, body: chatInput.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.message) {
+        setChatMessages((prev) => [...prev, data.message as ChatMessage]);
+        setChatInput("");
+      }
+    } catch {
+      // ignore; the next poll re-syncs the thread
+    } finally {
+      setChatSending(false);
+    }
+  }
+
+  async function handleCancelBooking() {
+    if (!cancelTarget || bookingActionBusy) return;
+    const target = cancelTarget;
+    setBookingActionBusy(true);
+    try {
+      await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: target.id, status: "cancelled" }),
+      });
+    } catch {
+      // still update locally; the list re-fetches on next dashboard load
+    }
+    setBookings((prev) => prev.map((b) => (b.id === target.id ? { ...b, status: "cancelled" as const } : b)));
+    setCancelTarget(null);
+    setBookingActionBusy(false);
+  }
+
+  async function handleSaveBookingEdit(form: EditBookingForm) {
+    if (!editTarget || bookingActionBusy) return;
+    const target = editTarget;
+    setBookingActionBusy(true);
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: target.id, edit: { ...form } }),
+      });
+      if (res.ok) {
+        setBookings((prev) => prev.map((b) => (b.id === target.id ? { ...b, ...form } : b)));
+        setEditTarget(null);
+      }
+    } catch {
+      // ignore; the next poll/load re-syncs
+    } finally {
+      setBookingActionBusy(false);
+    }
+  }
+
+  function handleLogout() {
+    try {
+      localStorage.removeItem("tutorconnect_token");
+      localStorage.removeItem("tutorconnect_user");
+    } catch {
+      // ignore storage errors in strict private modes
+    }
+    router.replace("/");
+  }
+
   function saveProfile(e: React.FormEvent) {
     e.preventDefault();
     setUser(profileForm);
@@ -277,6 +419,52 @@ export default function StudentDashboard() {
       <Navbar />
       <main className="flex-1 bg-slate-50">
         <div className="container-app py-8 lg:py-10">
+          {/* Quick navigation bar */}
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-card">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <Home size={14} /> Home
+            </Link>
+            <Link
+              href="/tutors"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <BookOpen size={14} /> Find Tutors
+            </Link>
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "chat" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <MessageCircle size={14} /> Chat
+            </button>
+            <button
+              onClick={() => setActiveTab("bookings")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "bookings" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <CalendarClock size={14} /> My Bookings
+            </button>
+            <button
+              onClick={() => setActiveTab("profile")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "profile" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <User size={14} /> Profile
+            </button>
+            <span className="ml-auto" />
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100"
+            >
+              <LogOut size={14} /> Log out
+            </button>
+          </div>
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
             {/* Sidebar */}
             <aside className="lg:sticky lg:top-24 lg:h-fit">
@@ -390,6 +578,8 @@ export default function StudentDashboard() {
                     loading={loading}
                     reviewedIds={reviewedIds}
                     onReview={setReviewTarget}
+                    onEdit={setEditTarget}
+                    onCancel={setCancelTarget}
                   />
                 )}
 
@@ -399,7 +589,20 @@ export default function StudentDashboard() {
 
                 {activeTab === "certificates" && <CertificatesPanel completed={completedBookings} studentName={displayName} />}
 
-                {activeTab === "payments" && <PaymentsPanel bookings={bookings} loading={loading} />}
+                {activeTab === "chat" && (
+                  <ChatPanel
+                    partners={chatPartners}
+                    active={activeChat}
+                    messages={chatMessages}
+                    loading={chatLoading}
+                    input={chatInput}
+                    sending={chatSending}
+                    onSelect={setActiveChat}
+                    onInputChange={setChatInput}
+                    onSend={sendChatMessage}
+                    myKey={user?.id || ""}
+                  />
+                )}
 
                 {activeTab === "profile" && (
                   <>
@@ -475,6 +678,24 @@ export default function StudentDashboard() {
             </button>
           </div>
         </div>
+      )}
+
+      {editTarget && (
+        <EditBookingModal
+          booking={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSave={handleSaveBookingEdit}
+          saving={bookingActionBusy}
+        />
+      )}
+
+      {cancelTarget && (
+        <CancelBookingModal
+          booking={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={handleCancelBooking}
+          busy={bookingActionBusy}
+        />
       )}
 
       {showDeleteConfirm && (
@@ -583,17 +804,26 @@ function BookingsPanel({
   loading,
   reviewedIds,
   onReview,
+  onEdit,
+  onCancel,
 }: {
   bookings: Booking[];
   loading: boolean;
   reviewedIds: string[];
   onReview: (b: Booking) => void;
+  onEdit: (b: Booking) => void;
+  onCancel: (b: Booking) => void;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-        <h2 className="font-display font-bold text-slate-900">My Bookings</h2>
-        <Link href="/tutors" className="text-sm font-semibold text-navy-700 hover:text-navy-900">
+        <div>
+          <h2 className="font-display font-bold text-slate-900">My Bookings</h2>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Pending requests can be edited or cancelled until the tutor approves them.
+          </p>
+        </div>
+        <Link href="/tutors" className="shrink-0 text-sm font-semibold text-navy-700 hover:text-navy-900">
           + Book a new session
         </Link>
       </div>
@@ -623,9 +853,25 @@ function BookingsPanel({
                 {b.notes && <p className="mt-1.5 text-xs italic text-slate-400">&ldquo;{b.notes}&rdquo;</p>}
               </div>
 
-               <div className="flex items-center gap-3">
+               <div className="flex flex-wrap items-center justify-end gap-2">
                  <span className="font-display font-bold text-navy-700">{formatNaira(b.totalPrice)}</span>
                  <StatusBadge status={b.status} />
+                 {b.status === "pending" && (
+                   <>
+                     <button
+                       onClick={() => onEdit(b)}
+                       className="inline-flex items-center gap-1 rounded-full border border-navy-200 px-3 py-1.5 text-xs font-bold text-navy-700 transition-colors hover:bg-navy-50"
+                     >
+                       <Pencil size={13} /> Edit
+                     </button>
+                     <button
+                       onClick={() => onCancel(b)}
+                       className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100"
+                     >
+                       <X size={13} /> Cancel
+                     </button>
+                   </>
+                 )}
                  {b.sessionMode === "online" && b.meetingLink && b.status === "accepted" && (
                    <a
                      href={b.meetingLink}
@@ -752,44 +998,419 @@ function CertificatesPanel({ completed, studentName }: { completed: Booking[]; s
   );
 }
 
-function PaymentsPanel({ bookings, loading }: { bookings: Booking[]; loading: boolean }) {
+interface EditBookingForm {
+  subject: string;
+  gradeLevel: string;
+  scheduledDate: string;
+  startTime: string;
+  endTime: string;
+  sessionMode: "online" | "in_person";
+  notes: string;
+  totalPrice: number;
+}
+
+const EDIT_GRADE_LEVELS = [
+  "Primary 1-6",
+  "JSS 1-3",
+  "SS 1",
+  "SS 2",
+  "SS 3",
+  "Undergraduate",
+  "Adult Learner",
+];
+
+function hoursBetween(start: string, end: string): number {
+  const toMinutes = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  return Math.max((toMinutes(end) - toMinutes(start)) / 60, 0);
+}
+
+function EditBookingModal({
+  booking,
+  onClose,
+  onSave,
+  saving,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onSave: (form: EditBookingForm) => void;
+  saving: boolean;
+}) {
+  const originalHours = Math.max(hoursBetween(booking.startTime, booking.endTime), 1);
+  const ratePerHour = booking.totalPrice / originalHours;
+
+  const [form, setForm] = useState<EditBookingForm>({
+    subject: booking.subject,
+    gradeLevel: booking.gradeLevel,
+    scheduledDate: booking.scheduledDate,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    sessionMode: booking.sessionMode,
+    notes: booking.notes || "",
+    totalPrice: booking.totalPrice,
+  });
+
+  const newHours = Math.max(hoursBetween(form.startTime, form.endTime), 1);
+  const estimate = Math.round(ratePerHour * newHours);
+  const invalidTimes = form.endTime <= form.startTime;
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (invalidTimes) return;
+    onSave({ ...form, totalPrice: estimate });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+      onClick={() => !saving && onClose()}
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-soft"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="font-display text-lg font-bold text-slate-900">Edit Booking Request</h3>
+          <button
+            type="button"
+            onClick={() => !saving && onClose()}
+            className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <p className="mb-4 text-xs text-slate-400">
+          with {booking.tutorName} &middot; still <span className="font-bold text-amber-600">pending</span> (not yet approved)
+        </p>
+
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Subject</label>
+            <input
+              type="text"
+              required
+              value={form.subject}
+              onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Date</label>
+              <input
+                type="date"
+                required
+                min={new Date().toISOString().split("T")[0]}
+                value={form.scheduledDate}
+                onChange={(e) => setForm((f) => ({ ...f, scheduledDate: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Grade Level</label>
+              <select
+                value={form.gradeLevel}
+                onChange={(e) => setForm((f) => ({ ...f, gradeLevel: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              >
+                {EDIT_GRADE_LEVELS.map((g) => (
+                  <option key={g}>{g}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Start Time</label>
+              <input
+                type="time"
+                required
+                value={form.startTime}
+                onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">End Time</label>
+              <input
+                type="time"
+                required
+                value={form.endTime}
+                onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+          </div>
+          {invalidTimes && (
+            <p className="text-xs font-semibold text-rose-500">End time must be after start time.</p>
+          )}
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Learning Mode</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, sessionMode: "online" }))}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  form.sessionMode === "online"
+                    ? "border-navy-600 bg-navy-50 text-navy-700"
+                    : "border-slate-200 text-slate-500 hover:border-slate-300"
+                }`}
+              >
+                <Laptop size={16} /> Online
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, sessionMode: "in_person" }))}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  form.sessionMode === "in_person"
+                    ? "border-navy-600 bg-navy-50 text-navy-700"
+                    : "border-slate-200 text-slate-500 hover:border-slate-300"
+                }`}
+              >
+                <MapPin size={16} /> In-Person
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Notes for the tutor</label>
+            <textarea
+              rows={3}
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="What should the tutor focus on?"
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+            <span className="text-sm font-medium text-slate-500">Estimated total</span>
+            <span className="font-display text-lg font-extrabold text-navy-700">{formatNaira(estimate)}</span>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Discard changes
+            </button>
+            <button
+              type="submit"
+              disabled={saving || invalidTimes}
+              className="btn-primary flex-1 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CancelBookingModal({
+  booking,
+  onClose,
+  onConfirm,
+  busy,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onConfirm: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+      onClick={() => !busy && onClose()}
+    >
+      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-soft" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-display text-lg font-bold text-rose-900">Cancel this booking?</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          <span className="font-semibold text-slate-800">{booking.subject}</span> with {booking.tutorName} on{" "}
+          {booking.scheduledDate} ({booking.startTime}–{booking.endTime}) will be cancelled.
+        </p>
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            Keep booking
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-60"
+          >
+            {busy ? "Cancelling…" : "Yes, cancel it"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatPanel({
+  partners,
+  active,
+  messages,
+  loading,
+  input,
+  sending,
+  onSelect,
+  onInputChange,
+  onSend,
+  myKey,
+}: {
+  partners: { key: string; name: string }[];
+  active: { key: string; name: string } | null;
+  messages: ChatMessage[];
+  loading: boolean;
+  input: string;
+  sending: boolean;
+  onSelect: (p: { key: string; name: string }) => void;
+  onInputChange: (v: string) => void;
+  onSend: () => void;
+  myKey: string;
+}) {
+  if (partners.length === 0) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <h2 className="font-display font-bold text-slate-900">Chat with Tutors</h2>
+        </div>
+        <div className="px-6 py-6">
+          <EmptyState
+            icon={MessageCircle}
+            title="No chats yet"
+            description="Your private chat with a tutor opens here as soon as they accept your booking request."
+          />
+          <div className="mt-2 text-center">
+            <Link href="/tutors" className="btn-primary !px-6 !py-2.5 text-sm">
+              Browse Tutors
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
-      <div className="border-b border-slate-100 px-6 py-4">
-        <h2 className="font-display font-bold text-slate-900">Payment History</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-6 py-4">
+        <h2 className="font-display font-bold text-slate-900">Chat with Tutors</h2>
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
+          <Lock size={13} /> Private — only you and the tutor can see these messages
+        </span>
       </div>
-      {loading ? (
-        <p className="px-6 py-10 text-center text-sm text-slate-400">Loading payment history...</p>
-      ) : bookings.length === 0 ? (
-        <div className="px-6 py-6">
-          <EmptyState icon={Receipt} title="No payments yet" description="Your booking payments will appear here." />
+
+      <div className="grid grid-cols-1 sm:grid-cols-[240px_1fr]">
+        {/* Partner list (hidden on mobile while a thread is open) */}
+        <div className={`border-slate-100 p-3 sm:border-r ${active ? "hidden sm:block" : "block"}`}>
+          <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Approved tutors</p>
+          <div className="space-y-1">
+            {partners.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => onSelect(p)}
+                className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
+                  active?.key === p.key ? "bg-navy-50 text-navy-700" : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-navy-700 to-navy-600 text-xs font-bold text-white">
+                  {p.name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
+                </span>
+                <span className="truncate">{p.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-xs font-bold uppercase tracking-wide text-slate-400">
-                <th className="px-6 py-3">Date</th>
-                <th className="px-6 py-3">Subject</th>
-                <th className="px-6 py-3">Tutor</th>
-                <th className="px-6 py-3">Status</th>
-                <th className="px-6 py-3 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {bookings.map((b) => (
-                <tr key={b.id}>
-                  <td className="px-6 py-3 text-slate-500">{b.scheduledDate}</td>
-                  <td className="px-6 py-3 font-semibold text-slate-800">{b.subject}</td>
-                  <td className="px-6 py-3 text-slate-500">{b.tutorName}</td>
-                  <td className="px-6 py-3"><StatusBadge status={b.status} /></td>
-                  <td className="px-6 py-3 text-right font-bold text-navy-700">{formatNaira(b.totalPrice)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        {/* Thread */}
+        <div className={`flex min-h-[380px] flex-col ${active ? "flex" : "hidden sm:flex"}`}>
+          {active ? (
+            <>
+              <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-navy-700 to-navy-600 text-xs font-bold text-white">
+                  {active.name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-slate-900">{active.name}</p>
+                  <p className="text-[11px] text-slate-400">Messages refresh automatically</p>
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                {loading ? (
+                  <p className="py-10 text-center text-sm text-slate-400">Loading conversation…</p>
+                ) : messages.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-slate-400">
+                    No messages yet — say hello to {active.name.split(" ")[0]} to plan your session.
+                  </p>
+                ) : (
+                  messages.map((m) => {
+                    const mine = m.senderKey === myKey;
+                    return (
+                      <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                            mine ? "rounded-br-md bg-navy-700 text-white" : "rounded-bl-md bg-slate-100 text-slate-800"
+                          }`}
+                        >
+                          <p>{m.body}</p>
+                          <p className={`mt-1 text-[10px] ${mine ? "text-navy-200" : "text-slate-400"}`}>
+                            {mine ? "You" : m.senderName} ·{" "}
+                            {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="border-t border-slate-100 p-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => onInputChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        onSend();
+                      }
+                    }}
+                    placeholder={`Message ${active.name.split(" ")[0]}…`}
+                    className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={onSend}
+                    disabled={sending || !input.trim()}
+                    className="btn-primary !rounded-full !px-4 !py-2.5 disabled:opacity-50"
+                    aria-label="Send message"
+                  >
+                    {sending ? "…" : <Send size={16} />}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="py-10 text-center text-sm text-slate-400">Select a tutor to start chatting.</p>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
