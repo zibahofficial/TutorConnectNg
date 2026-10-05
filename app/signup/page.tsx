@@ -3,6 +3,7 @@
 import { Suspense, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Carlito } from "next/font/google";
 import { useRouter, useSearchParams } from "next/navigation";
 import LegalModal, { LegalLink, type LegalDoc } from "@/components/LegalModal";
 import {
@@ -22,6 +23,20 @@ import {
   X,
 } from "lucide-react";
 import type { UserRole } from "@/lib/types";
+
+/**
+ * Calibri-look font for the signup page. Local `Calibri` is preferred where
+ * installed (e.g. Windows); the Carlito webfont — metric-compatible with
+ * Calibri — is the fallback for devices without it (Android, iOS, macOS,
+ * Linux). Exposed as the `--font-signup-calibri` CSS variable, consumed by
+ * the `.font-calibri` class in globals.css.
+ */
+const calibriFont = Carlito({
+  variable: "--font-signup-calibri",
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  display: "swap",
+});
 
 const NIGERIAN_STATES = [
   "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
@@ -391,7 +406,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-navy-50/60 to-white px-4 py-12">
+    <main className={`${calibriFont.variable} font-calibri flex min-h-screen items-center justify-center bg-gradient-to-b from-navy-50/60 to-white px-4 py-12`}>
       <div
         className={`w-full rounded-3xl border border-slate-200 bg-white p-8 shadow-soft transition-all ${
           isTutorFlow || isParentFlow ? "max-w-2xl" : "max-w-md"

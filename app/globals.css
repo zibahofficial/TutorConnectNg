@@ -21,6 +21,16 @@ body {
     "Segoe UI", Roboto, sans-serif;
 }
 
+/* Signup page: Calibri where installed (Windows), otherwise the
+   metric-compatible Carlito webfont (loaded via next/font in
+   app/signup/page.tsx). Also overrides display headings inside the page so
+   the whole card renders in the same typeface. */
+.font-calibri,
+.font-calibri .font-display {
+  font-family: Calibri, var(--font-signup-calibri), "Segoe UI", system-ui,
+    sans-serif;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
