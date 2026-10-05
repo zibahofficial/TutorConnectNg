@@ -251,11 +251,10 @@ export async function POST(req: NextRequest) {
           city: newUser.city,
           state: newUser.state,
           avatarUrl: newUser.avatarUrl,
-          headline: newUser.headline,
+          headline: newUser.headline, teachingMode: newUser.teachingMode ?? null,
           bio: newUser.bio,
           yearsExperience: newUser.yearsExperience,
           hourlyRate: newUser.hourlyRate,
-          teachingMode: newUser.teachingMode,
           subjects: newUser.subjects,
           qualification: newUser.qualification,
         },
@@ -294,6 +293,7 @@ export async function POST(req: NextRequest) {
             city: dbUser.city,
             state: dbUser.state,
             avatarUrl: dbUser.avatar_url,
+            teachingMode: null,
           },
         });
       }
@@ -310,7 +310,7 @@ export async function POST(req: NextRequest) {
       const token = signToken({ id: user.id, email, role: user.role });
       return NextResponse.json({
         token,
-        user: { id: user.id, email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
+        user: { id: user.id, email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
         demo: true,
       });
     }
@@ -347,7 +347,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({ success: true, user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification } });
+      return NextResponse.json({ success: true, user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification } });
     }
 
     if (action === "delete_account") {
@@ -394,7 +394,7 @@ export async function POST(req: NextRequest) {
       if (auth instanceof NextResponse) return auth;
       const user = auth.user;
       return NextResponse.json({
-        user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
+        user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
       });
     }
 

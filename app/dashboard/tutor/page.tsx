@@ -9,12 +9,14 @@ import {
   Laptop,
   MapPin,
   Plus,
+  Save,
   Trash2,
   Wallet,
   X,
 } from "lucide-react";
 import DashboardShell from "@/components/DashboardShell";
 import PrivateChat from "@/components/PrivateChat";
+import { TUTOR_HEADLINES, TUTOR_STATES, QUALIFICATIONS, TEACHING_MODES } from "@/lib/tutor-options";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import { getTutorById } from "@/lib/mock-data";
@@ -102,6 +104,107 @@ export default function TutorDashboard() {
       .then((data) => setBookings(data.bookings ?? []))
       .finally(() => setLoading(false));
   }, []);
+
+  // My Profile: load the tutor's full profile so it can be edited
+  const [profileForm, setProfileForm] = useState<{
+    fullName: string;
+    phone: string;
+    city: string;
+    state: string;
+    headline: string;
+    teachingMode: string;
+    bio: string;
+    yearsExperience: string;
+    hourlyRate: string;
+    qualification: string;
+  }>({
+    fullName: "",
+    phone: "",
+    city: "",
+    state: "",
+    headline: "",
+    teachingMode: "",
+    bio: "",
+    yearsExperience: "",
+    hourlyRate: "",
+    qualification: "",
+  });
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
+  useEffect(() => {
+    if (!authChecked || !authUser) return;
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ action: "get_user" }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const u = data?.user;
+        if (!u) return;
+        setProfileForm({
+          fullName: u.full_name || "",
+          phone: u.phone || "",
+          city: u.city || "",
+          state: u.state || "",
+          headline: u.headline || "",
+          teachingMode: u.teachingMode || "",
+          bio: u.bio || "",
+          yearsExperience: u.yearsExperience != null ? String(u.yearsExperience) : "",
+          hourlyRate: u.hourlyRate != null ? String(u.hourlyRate) : "",
+          qualification: u.qualification || "",
+        });
+      })
+      .catch(() => {});
+  }, [authChecked, authUser]);
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setProfileError("");
+    // Compulsory dropdowns: headline, state and teaching mode must be chosen
+    if (!profileForm.headline) return setProfileError("Please select your professional headline.");
+    if (!profileForm.state) return setProfileError("Please select your state.");
+    if (!profileForm.teachingMode) return setProfileError("Please select your teaching mode.");
+    setProfileSaving(true);
+    try {
+      const token = localStorage.getItem("tutorconnect_token") || "";
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action: "update_profile",
+          updates: {
+            fullName: profileForm.fullName,
+            phone: profileForm.phone,
+            city: profileForm.city,
+            state: profileForm.state,
+            headline: profileForm.headline,
+            teachingMode: profileForm.teachingMode,
+            bio: profileForm.bio,
+            yearsExperience: profileForm.yearsExperience ? Number(profileForm.yearsExperience) : undefined,
+            hourlyRate: profileForm.hourlyRate ? Number(profileForm.hourlyRate) : undefined,
+            qualification: profileForm.qualification || undefined,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
+    } catch {
+      setProfileError("Could not save your profile. Please try again.");
+    } finally {
+      setProfileSaving(false);
+    }
+  }
 
   // Load the logged-in tutor's saved weekly availability (falls back to the
   // in-memory store in demo mode).
@@ -351,6 +454,162 @@ export default function TutorDashboard() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
+        <h2 className="font-display font-bold text-slate-900">My Profile</h2>
+        <p className="mt-0.5 text-xs text-slate-400">
+          Keep your details up to date — students see these when deciding to book you.
+        </p>
+        <form onSubmit={saveProfile} className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Full Name <span className="text-rose-500">*</span>
+            </label>
+            <input
+              required
+              type="text"
+              value={profileForm.fullName}
+              onChange={(e) => setProfileForm((f) => ({ ...f, fullName: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone</label>
+            <input
+              type="tel"
+              value={profileForm.phone}
+              onChange={(e) => setProfileForm((f) => ({ ...f, phone: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              placeholder="08012345678"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Professional Headline <span className="text-rose-500">*</span>
+            </label>
+            <select
+              required
+              value={profileForm.headline}
+              onChange={(e) => setProfileForm((f) => ({ ...f, headline: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            >
+              <option value="">Select your professional headline…</option>
+              {TUTOR_HEADLINES.map((h) => (
+                <option key={h} value={h}>{h}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Teaching Mode <span className="text-rose-500">*</span>
+            </label>
+            <select
+              required
+              value={profileForm.teachingMode}
+              onChange={(e) => setProfileForm((f) => ({ ...f, teachingMode: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            >
+              <option value="">Select teaching mode…</option>
+              {TEACHING_MODES.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+              City <span className="text-rose-500">*</span>
+            </label>
+            <input
+              required
+              type="text"
+              value={profileForm.city}
+              onChange={(e) => setProfileForm((f) => ({ ...f, city: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+              State <span className="text-rose-500">*</span>
+            </label>
+            <select
+              required
+              value={profileForm.state}
+              onChange={(e) => setProfileForm((f) => ({ ...f, state: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            >
+              <option value="">Select your state…</option>
+              {TUTOR_STATES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Qualification</label>
+            <select
+              value={profileForm.qualification}
+              onChange={(e) => setProfileForm((f) => ({ ...f, qualification: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            >
+              <option value="">Select qualification (optional)…</option>
+              {QUALIFICATIONS.map((q) => (
+                <option key={q} value={q}>{q}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Experience (yrs)</label>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={profileForm.yearsExperience}
+                onChange={(e) => setProfileForm((f) => ({ ...f, yearsExperience: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Rate (₦)</label>
+              <input
+                type="number"
+                min={0}
+                step={500}
+                value={profileForm.hourlyRate}
+                onChange={(e) => setProfileForm((f) => ({ ...f, hourlyRate: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Bio</label>
+            <textarea
+              rows={4}
+              maxLength={4000}
+              value={profileForm.bio}
+              onChange={(e) => setProfileForm((f) => ({ ...f, bio: e.target.value }))}
+              placeholder="Tell students and parents about your teaching style, experience, and results..."
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            />
+          </div>
+
+          {profileError && (
+            <p className="text-sm font-semibold text-rose-500 sm:col-span-2">{profileError}</p>
+          )}
+          {profileSaved && (
+            <p className="text-sm font-semibold text-emerald-600 sm:col-span-2">Profile saved successfully.</p>
+          )}
+
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={profileSaving} className="btn-primary disabled:opacity-60">
+              {profileSaving ? "Saving…" : (<><Save size={16} /> Save Profile</>)}
+            </button>
+          </div>
+        </form>
       </div>
 
       <div className="mt-6">
