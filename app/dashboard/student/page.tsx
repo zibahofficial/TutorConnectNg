@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -9,12 +9,10 @@ import {
   BookOpen,
   CalendarClock,
   CheckCircle2,
-  ChevronLeft,
   Heart,
   Home,
   Laptop,
   LayoutGrid,
-  Lock,
   LogOut,
   Mail,
   MapPin,
@@ -23,19 +21,18 @@ import {
   Pencil,
   Phone,
   Save,
-  Send,
   Star,
   User,
-  Wallet,
   X,
    Video,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import PrivateChat from "@/components/PrivateChat";
 import Footer from "@/components/Footer";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import { TUTORS } from "@/lib/mock-data";
-import type { Booking, ChatMessage } from "@/lib/types";
+import type { Booking } from "@/lib/types";
 
 type TabId = "overview" | "bookings" | "wishlist" | "certificates" | "chat" | "profile";
 
@@ -78,6 +75,16 @@ interface StoredUser {
 export default function StudentDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  // Switch tab and smoothly scroll the user down to the content so every
+  // button visibly takes them somewhere.
+  function goToTab(tab: TabId) {
+    setActiveTab(tab);
+    requestAnimationFrame(() => {
+      contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   const [user, setUser] = useState<StoredUser | null>(null);
 
@@ -98,14 +105,6 @@ export default function StudentDashboard() {
   const [editTarget, setEditTarget] = useState<Booking | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
   const [bookingActionBusy, setBookingActionBusy] = useState(false);
-
-  // Private tutor chat
-  const [chatPartners, setChatPartners] = useState<{ key: string; name: string; status?: string }[]>([]);
-  const [activeChat, setActiveChat] = useState<{ key: string; name: string; status?: string } | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatSending, setChatSending] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
 
   const [authChecked, setAuthChecked] = useState(false);
 
@@ -164,65 +163,6 @@ export default function StudentDashboard() {
       })
       .finally(() => setLoading(false));
   }, [authChecked, user]);
-
-  // Chat partners = tutors this student has booked (any status), saved
-  // tutors, and anyone they already have a conversation with — so the chat
-  // is always usable, with a "new chat" picker for every other tutor.
-  useEffect(() => {
-    if (!authChecked || !user) return;
-    const byKey = new Map<string, { name: string; status?: string }>();
-    const rank = (s: string) => (s === "accepted" || s === "completed" ? 2 : s === "pending" ? 1 : 0);
-    for (const b of bookings) {
-      if (b.tutorId && ["pending", "accepted", "completed"].includes(b.status)) {
-        const existing = byKey.get(b.tutorId);
-        if (!existing || rank(b.status) > rank(existing.status ?? "")) {
-          byKey.set(b.tutorId, { name: b.tutorName || "Tutor", status: b.status });
-        }
-      }
-    }
-    for (const id of savedTutorIds) {
-      const t = TUTORS.find((x) => x.id === id);
-      if (t && !byKey.has(id)) byKey.set(id, { name: t.fullName });
-    }
-    const merge = (extra: { partnerKey: string; partnerName: string }[]) => {
-      for (const c of extra) {
-        if (!byKey.has(c.partnerKey)) byKey.set(c.partnerKey, { name: c.partnerName || "Tutor" });
-      }
-      const merged = Array.from(byKey, ([key, v]) => ({ key, name: v.name, status: v.status }));
-      setChatPartners(merged);
-      setActiveChat((prev) => (prev && merged.some((p) => p.key === prev.key) ? prev : merged[0] ?? null));
-    };
-    const token = localStorage.getItem("tutorconnect_token") || "";
-    fetch(`/api/messages?conversations=1${token ? `&token=${encodeURIComponent(token)}` : ""}`)
-      .then((res) => (res.ok ? res.json() : { conversations: [] }))
-      .then((data) => merge(data.conversations ?? []))
-      .catch(() => merge([]));
-  }, [authChecked, user, bookings, savedTutorIds]);
-
-  // Load the active chat thread and poll for new messages every 5 seconds.
-  useEffect(() => {
-    if (!authChecked || !user || !activeChat) return;
-    let active = true;
-    const token = localStorage.getItem("tutorconnect_token") || "";
-    const load = () =>
-      fetch(`/api/messages?with=${encodeURIComponent(activeChat.key)}${token ? `&token=${encodeURIComponent(token)}` : ""}`)
-        .then((res) => (res.ok ? res.json() : { messages: [] }))
-        .then((data) => {
-          if (active && Array.isArray(data.messages)) setChatMessages(data.messages);
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (active) setChatLoading(false);
-        });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- flagging loading state while initiating the thread fetch
-    setChatLoading(true);
-    load();
-    const interval = setInterval(load, 5000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [authChecked, user, activeChat]);
 
   const stats = useMemo(() => {
     const pending = bookings.filter((b) => b.status === "pending").length;
@@ -299,36 +239,6 @@ export default function StudentDashboard() {
     setReviewTarget(null);
     setRating(5);
     setComment("");
-  }
-
-  function startChat(partner: { key: string; name: string; status?: string }) {
-    setChatPartners((prev) => (prev.some((p) => p.key === partner.key) ? prev : [...prev, partner]));
-    setActiveChat(partner);
-  }
-
-  async function sendChatMessage() {
-    if (!activeChat || !chatInput.trim() || chatSending) return;
-    setChatSending(true);
-    try {
-      const token = localStorage.getItem("tutorconnect_token") || "";
-      const res = await fetch("/api/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ to: activeChat.key, body: chatInput.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok && data.message) {
-        setChatMessages((prev) => [...prev, data.message as ChatMessage]);
-        setChatInput("");
-      }
-    } catch {
-      // ignore; the next poll re-syncs the thread
-    } finally {
-      setChatSending(false);
-    }
   }
 
   async function handleCancelBooking() {
@@ -449,7 +359,7 @@ export default function StudentDashboard() {
               <BookOpen size={14} /> Find Tutors
             </Link>
             <button
-              onClick={() => setActiveTab("chat")}
+              onClick={() => goToTab("chat")}
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
                 activeTab === "chat" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
               }`}
@@ -457,7 +367,7 @@ export default function StudentDashboard() {
               <MessageCircle size={14} /> Chat
             </button>
             <button
-              onClick={() => setActiveTab("bookings")}
+              onClick={() => goToTab("bookings")}
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
                 activeTab === "bookings" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
               }`}
@@ -465,7 +375,7 @@ export default function StudentDashboard() {
               <CalendarClock size={14} /> My Bookings
             </button>
             <button
-              onClick={() => setActiveTab("profile")}
+              onClick={() => goToTab("profile")}
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
                 activeTab === "profile" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
               }`}
@@ -507,7 +417,7 @@ export default function StudentDashboard() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveTab(item.id)}
+                      onClick={() => goToTab(item.id)}
                       className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors ${
                         active ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-slate-100"
                       }`}
@@ -547,17 +457,10 @@ export default function StudentDashboard() {
               </p>
 
               {/* Quick stats */}
-              <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 <StatCard icon={BookOpen} label="My Bookings" value={String(stats.myBookings)} accent="navy" live />
                 <StatCard icon={CalendarClock} label="Upcoming Sessions" value={String(stats.upcoming)} accent="emerald" live />
                 <StatCard icon={Heart} label="Saved Tutors" value={String(savedTutorIds.length)} accent="rose" live />
-                <StatCard
-                  icon={Wallet}
-                  label="Total Spent"
-                  value={stats.totalSpent > 0 ? formatNaira(stats.totalSpent) : "—"}
-                  accent="amber"
-                  live
-                />
                 <StatCard icon={Award} label="Certificates" value={String(completedBookings.length)} accent="navy" live />
               </div>
 
@@ -572,7 +475,7 @@ export default function StudentDashboard() {
                   review once it&apos;s complete.
                 </p>
                 <div className="mt-5 flex flex-wrap items-center gap-3">
-                  <button onClick={() => setActiveTab("bookings")} className="btn-primary !bg-white !bg-none !text-navy-800">
+                  <button onClick={() => goToTab("bookings")} className="btn-primary !bg-white !bg-none !text-navy-800">
                     Go to my bookings
                   </button>
                   <Link href="/tutors" className="btn-outline !border-white/40 !bg-transparent !text-white hover:!text-white hover:!border-white">
@@ -582,7 +485,7 @@ export default function StudentDashboard() {
               </div>
 
               {/* Tab content */}
-              <div className="mt-8">
+              <div ref={contentRef} className="mt-8 scroll-mt-24">
                 {activeTab === "overview" && (
                   <OverviewPanel bookings={bookings} loading={loading} onViewAll={() => setActiveTab("bookings")} />
                 )}
@@ -605,19 +508,11 @@ export default function StudentDashboard() {
                 {activeTab === "certificates" && <CertificatesPanel completed={completedBookings} studentName={displayName} />}
 
                 {activeTab === "chat" && (
-                  <ChatPanel
-                    partners={chatPartners}
-                    active={activeChat}
-                    messages={chatMessages}
-                    loading={chatLoading}
-                    input={chatInput}
-                    sending={chatSending}
-                    onSelect={setActiveChat}
-                    onStartChat={startChat}
-                    onBack={() => setActiveChat(null)}
-                    onInputChange={setChatInput}
-                    onSend={sendChatMessage}
+                  <PrivateChat
                     myKey={user?.id || ""}
+                    pickerFetchAction="list_chat_tutors"
+                    pickerLabel="＋ Chat a tutor"
+                    emptyListHint="No conversations yet — pick a tutor above to start a private chat. Real tutor accounts you sign up with will appear there."
                   />
                 )}
 
@@ -1271,195 +1166,6 @@ function CancelBookingModal({
           >
             {busy ? "Cancelling…" : "Yes, cancel it"}
           </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ChatPanel({
-  partners,
-  active,
-  messages,
-  loading,
-  input,
-  sending,
-  onSelect,
-  onStartChat,
-  onBack,
-  onInputChange,
-  onSend,
-  myKey,
-}: {
-  partners: { key: string; name: string; status?: string }[];
-  active: { key: string; name: string; status?: string } | null;
-  messages: ChatMessage[];
-  loading: boolean;
-  input: string;
-  sending: boolean;
-  onSelect: (p: { key: string; name: string; status?: string }) => void;
-  onStartChat: (p: { key: string; name: string }) => void;
-  onBack: () => void;
-  onInputChange: (v: string) => void;
-  onSend: () => void;
-  myKey: string;
-}) {
-  const initials = (name: string) =>
-    name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
-
-  const unpickedTutors = TUTORS.filter((t) => !partners.some((p) => p.key === t.id));
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-6 py-4">
-        <h2 className="font-display font-bold text-slate-900">Chat with Tutors</h2>
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
-          <Lock size={13} /> Private — only you and the tutor can see these messages
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-[240px_1fr]">
-        {/* Tutor list + new chat picker (always visible so the student can always start typing) */}
-        <div className={`border-slate-100 p-3 sm:border-r ${active ? "hidden sm:block" : "block"}`}>
-          <div className="mb-2 px-1">
-            <select
-              value=""
-              onChange={(e) => {
-                const t = TUTORS.find((x) => x.id === e.target.value);
-                if (t) onStartChat({ key: t.id, name: t.fullName });
-              }}
-              className="w-full rounded-xl border border-navy-200 bg-navy-50 px-3 py-2 text-xs font-bold text-navy-700 focus:border-navy-600 focus:outline-none"
-              aria-label="Start a new chat with a tutor"
-            >
-              <option value="">＋ Start a new chat…</option>
-              {unpickedTutors.map((t) => (
-                <option key={t.id} value={t.id}>{t.fullName}</option>
-              ))}
-            </select>
-          </div>
-          <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Your tutors</p>
-          <div className="space-y-1">
-            {partners.length === 0 && (
-              <p className="px-2 py-2 text-xs leading-relaxed text-slate-400">
-                No tutors yet — pick one above, or book a session and the tutor appears here.
-              </p>
-            )}
-            {partners.map((p) => (
-              <button
-                key={p.key}
-                onClick={() => onSelect(p)}
-                className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
-                  active?.key === p.key ? "bg-navy-50 text-navy-700" : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-navy-700 to-navy-600 text-xs font-bold text-white">
-                  {initials(p.name)}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                {p.status === "pending" && (
-                  <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-600">Pending</span>
-                )}
-                {(p.status === "accepted" || p.status === "completed") && (
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">Approved</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Thread */}
-        <div className={`flex min-h-[420px] flex-col ${active ? "flex" : "hidden sm:flex"}`}>
-          {active ? (
-            <>
-              <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 sm:hidden"
-                  aria-label="Back to tutor list"
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-navy-700 to-navy-600 text-xs font-bold text-white">
-                  {initials(active.name)}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-slate-900">{active.name}</p>
-                  <p className="text-[11px] text-slate-400">Messages refresh automatically</p>
-                </div>
-                {active.status === "pending" && (
-                  <span className="ml-auto hidden shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-600 sm:inline">
-                    Booking pending approval
-                  </span>
-                )}
-              </div>
-
-              <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                {loading ? (
-                  <p className="py-10 text-center text-sm text-slate-400">Loading conversation…</p>
-                ) : messages.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-slate-400">
-                    No messages yet — say hello to {active.name.split(" ")[0]} in the box below.
-                  </p>
-                ) : (
-                  messages.map((m) => {
-                    const mine = m.senderKey === myKey;
-                    return (
-                      <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                        <div
-                          className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                            mine ? "rounded-br-md bg-navy-700 text-white" : "rounded-bl-md bg-slate-100 text-slate-800"
-                          }`}
-                        >
-                          <p>{m.body}</p>
-                          <p className={`mt-1 text-[10px] ${mine ? "text-navy-200" : "text-slate-400"}`}>
-                            {mine ? "You" : m.senderName} ·{" "}
-                            {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="border-t border-slate-100 p-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => onInputChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        onSend();
-                      }
-                    }}
-                    placeholder={`Message ${active.name.split(" ")[0]}…`}
-                    className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={onSend}
-                    disabled={sending || !input.trim()}
-                    className="btn-primary !rounded-full !px-4 !py-2.5 disabled:opacity-50"
-                    aria-label="Send message"
-                  >
-                    {sending ? "…" : <Send size={16} />}
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-              <MessageCircle size={40} className="text-slate-200" />
-              <p className="text-sm font-semibold text-slate-600">Pick a tutor to start chatting</p>
-              <p className="max-w-xs text-xs leading-relaxed text-slate-400">
-                Choose a tutor from the list, or use “Start a new chat” to message any tutor on the platform. Chats are
-                private between you and the tutor.
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>

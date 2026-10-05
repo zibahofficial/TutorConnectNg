@@ -7,20 +7,18 @@ import {
   Check,
   Clock3,
   Laptop,
-  Lock,
   MapPin,
-
   Plus,
-  Send,
   Trash2,
   Wallet,
   X,
 } from "lucide-react";
 import DashboardShell from "@/components/DashboardShell";
+import PrivateChat from "@/components/PrivateChat";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import { getTutorById } from "@/lib/mock-data";
-import type { AvailabilitySlot, Booking, ChatMessage } from "@/lib/types";
+import type { AvailabilitySlot, Booking } from "@/lib/types";
 
 const DEMO_TUTOR_ID = "t1";
 const DAYS: AvailabilitySlot["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -74,13 +72,6 @@ export default function TutorDashboard() {
   const [availability, setAvailability] = useState<AvailabilitySlot[]>(tutor.availability);
   const [newSlot, setNewSlot] = useState<AvailabilitySlot>({ day: "Mon", start: "09:00", end: "11:00" });
 
-  // Student chat (private, per student — unlocks once a booking is accepted)
-  const [chatPartners, setChatPartners] = useState<{ key: string; name: string }[]>([]);
-  const [activeChat, setActiveChat] = useState<{ key: string; name: string } | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatSending, setChatSending] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
 
   async function handleDeleteAccount() {
     if (!authUser?.email) return;
@@ -111,81 +102,6 @@ export default function TutorDashboard() {
       .then((data) => setBookings(data.bookings ?? []))
       .finally(() => setLoading(false));
   }, []);
-
-  // Chat partners = students with accepted (approved) bookings, plus anyone
-  // who has already started a conversation.
-  useEffect(() => {
-    if (!authChecked || !authUser) return;
-    const byKey = new Map<string, string>();
-    for (const b of bookings) {
-      if ((b.status === "accepted" || b.status === "completed") && b.studentId) {
-        byKey.set(b.studentId, b.studentName || "Student");
-      }
-    }
-    const merge = (extra: { partnerKey: string; partnerName: string }[]) => {
-      for (const c of extra) {
-        if (!byKey.has(c.partnerKey)) byKey.set(c.partnerKey, c.partnerName || "Student");
-      }
-      const merged = Array.from(byKey, ([key, name]) => ({ key, name }));
-      setChatPartners(merged);
-      setActiveChat((prev) => (prev && merged.some((p) => p.key === prev.key) ? prev : merged[0] ?? null));
-    };
-    const token = localStorage.getItem("tutorconnect_token") || "";
-    fetch(`/api/messages?conversations=1&as=${DEMO_TUTOR_ID}${token ? `&token=${encodeURIComponent(token)}` : ""}`)
-      .then((res) => (res.ok ? res.json() : { conversations: [] }))
-      .then((data) => merge(data.conversations ?? []))
-      .catch(() => merge([]));
-  }, [authChecked, authUser, bookings]);
-
-  // Load the active thread and poll for new messages every 5 seconds.
-  useEffect(() => {
-    if (!authChecked || !authUser || !activeChat) return;
-    let active = true;
-    const token = localStorage.getItem("tutorconnect_token") || "";
-    const load = () =>
-      fetch(`/api/messages?with=${encodeURIComponent(activeChat.key)}&as=${DEMO_TUTOR_ID}${token ? `&token=${encodeURIComponent(token)}` : ""}`)
-        .then((res) => (res.ok ? res.json() : { messages: [] }))
-        .then((data) => {
-          if (active && Array.isArray(data.messages)) setChatMessages(data.messages);
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (active) setChatLoading(false);
-        });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- flagging loading state while initiating the thread fetch
-    setChatLoading(true);
-    load();
-    const interval = setInterval(load, 5000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [authChecked, authUser, activeChat]);
-
-  async function sendChatMessage() {
-    if (!activeChat || !chatInput.trim() || chatSending) return;
-    setChatSending(true);
-    try {
-      const token = localStorage.getItem("tutorconnect_token") || "";
-      const res = await fetch("/api/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ from: DEMO_TUTOR_ID, to: activeChat.key, body: chatInput.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok && data.message) {
-        setChatMessages((prev) => [...prev, data.message as ChatMessage]);
-        setChatInput("");
-      }
-    } catch {
-      // ignore; the next poll re-syncs the thread
-    } finally {
-      setChatSending(false);
-    }
-  }
 
   // Load the logged-in tutor's saved weekly availability (falls back to the
   // in-memory store in demo mode).
@@ -437,108 +353,12 @@ export default function TutorDashboard() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-6 py-4">
-          <h2 className="font-display font-bold text-slate-900">Student Messages</h2>
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
-            <Lock size={13} /> Private — only you and the student can see these messages
-          </span>
-        </div>
-        {chatPartners.length === 0 ? (
-          <p className="px-6 py-10 text-center text-sm text-slate-400">
-            No student chats yet — conversations open here once you accept a booking request.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr]">
-            <div className="border-slate-100 p-3 sm:border-r">
-              <div className="space-y-1">
-                {chatPartners.map((p) => (
-                  <button
-                    key={p.key}
-                    onClick={() => setActiveChat(p)}
-                    className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
-                      activeChat?.key === p.key ? "bg-navy-50 text-navy-700" : "text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-navy-700 to-navy-600 text-xs font-bold text-white">
-                      {p.name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
-                    </span>
-                    <span className="truncate">{p.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex min-h-[320px] flex-col">
-              {activeChat ? (
-                <>
-                  <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-navy-700 to-navy-600 text-xs font-bold text-white">
-                      {activeChat.name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}
-                    </span>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">{activeChat.name}</p>
-                      <p className="text-[11px] text-slate-400">Messages refresh automatically</p>
-                    </div>
-                  </div>
-                  <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                    {chatLoading ? (
-                      <p className="py-10 text-center text-sm text-slate-400">Loading conversation…</p>
-                    ) : chatMessages.length === 0 ? (
-                      <p className="py-10 text-center text-sm text-slate-400">No messages yet.</p>
-                    ) : (
-                      chatMessages.map((m) => {
-                        const mine = m.senderKey === DEMO_TUTOR_ID;
-                        return (
-                          <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                            <div
-                              className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                                mine ? "rounded-br-md bg-navy-700 text-white" : "rounded-bl-md bg-slate-100 text-slate-800"
-                              }`}
-                            >
-                              <p>{m.body}</p>
-                              <p className={`mt-1 text-[10px] ${mine ? "text-navy-200" : "text-slate-400"}`}>
-                                {mine ? "You" : m.senderName} ·{" "}
-                                {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                  <div className="border-t border-slate-100 p-3">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            sendChatMessage();
-                          }
-                        }}
-                        placeholder="Reply to student…"
-                        className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={sendChatMessage}
-                        disabled={chatSending || !chatInput.trim()}
-                        className="btn-primary !rounded-full !px-4 !py-2.5 disabled:opacity-50"
-                        aria-label="Send message"
-                      >
-                        {chatSending ? "…" : <Send size={16} />}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <p className="py-10 text-center text-sm text-slate-400">Select a student to view the conversation.</p>
-              )}
-            </div>
-          </div>
-        )}
+      <div className="mt-6">
+        <PrivateChat
+          myKey={authUser?.id || ""}
+          emptyListHint="Students appear here as soon as they message you. Chats are private between you and the student."
+          minThreadHeight="min-h-[340px]"
+        />
       </div>
 
       <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 shadow-card">

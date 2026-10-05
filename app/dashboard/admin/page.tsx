@@ -18,6 +18,7 @@ import {
   Wallet,
 } from "lucide-react";
 import DashboardShell from "@/components/DashboardShell";
+import PrivateChat from "@/components/PrivateChat";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import { TUTORS } from "@/lib/mock-data";
@@ -38,6 +39,7 @@ export default function AdminDashboard() {
   const [adminUsers, setAdminUsers] = useState<Array<{ id: string; email: string; full_name: string; role: string; is_active: boolean; created_at: string }>>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
+  const [adminId, setAdminId] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -53,6 +55,7 @@ export default function AdminDashboard() {
       } else {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of localStorage auth state after hydration
         setAuthChecked(true);
+        setAdminId(user.id || "");
       }
     } catch {
       router.replace("/login");
@@ -329,6 +332,17 @@ export default function AdminDashboard() {
             </table>
           </div>
         )}
+      </div>
+      <div className="mt-8">
+        <PrivateChat
+          myKey={adminId}
+          pickerOptions={adminUsers
+            .filter((u) => u.id !== adminId)
+            .map((u) => ({ key: u.id, name: u.full_name || u.email }))}
+          pickerLabel="＋ Message a user"
+          emptyListHint="No conversations yet — pick a user above to start a private support chat."
+          minThreadHeight="min-h-[340px]"
+        />
       </div>
     </DashboardShell>
   );

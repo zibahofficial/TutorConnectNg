@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,7 @@ import {
   Laptop,
   LayoutGrid,
   MapPin,
+  MessageCircle,
   Plus,
   Receipt,
   Trash2,
@@ -21,19 +22,21 @@ import {
   Wallet,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import PrivateChat from "@/components/PrivateChat";
 import Footer from "@/components/Footer";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import type { Booking } from "@/lib/types";
 import type { Child } from "@/lib/auth-store";
 
-type TabId = "overview" | "children" | "bookings" | "payments" | "profile";
+type TabId = "overview" | "children" | "bookings" | "payments" | "chat" | "profile";
 
 const NAV_ITEMS: { id: TabId; label: string; icon: typeof LayoutGrid }[] = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
   { id: "children", label: "My Children", icon: UserCheck },
   { id: "bookings", label: "Bookings", icon: BookOpen },
   { id: "payments", label: "Payment History", icon: Receipt },
+  { id: "chat", label: "Chat with Tutors", icon: MessageCircle },
   { id: "profile", label: "Profile", icon: User },
 ];
 
@@ -80,6 +83,15 @@ const GRADE_LEVELS = [
 export default function ParentDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  // Switch tab and smoothly scroll the user down to the content.
+  function goToTab(tab: TabId) {
+    setActiveTab(tab);
+    requestAnimationFrame(() => {
+      contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
   const [user, setUser] = useState<StoredUser | null>(null);
   const [profileForm, setProfileForm] = useState<StoredUser>({});
   const [profileSaved, setProfileSaved] = useState(false);
@@ -337,7 +349,7 @@ export default function ParentDashboard() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveTab(item.id)}
+                      onClick={() => goToTab(item.id)}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors ${
                         active ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-slate-100"
                       }`}
@@ -372,6 +384,8 @@ export default function ParentDashboard() {
                 <StatCard icon={Wallet} label="Total Spent" value={stats.totalSpent > 0 ? formatNaira(stats.totalSpent) : "—"} accent="rose" live />
               </div>
 
+              {/* Tab content */}
+              <div ref={contentRef} className="scroll-mt-24">
               {/* Overview */}
               {activeTab === "overview" && (
                 <div className="mt-6 space-y-6">
@@ -411,6 +425,16 @@ export default function ParentDashboard() {
                 <PaymentsPanel payments={paymentHistory} loading={loading} />
               )}
 
+              {/* Chat */}
+              {activeTab === "chat" && (
+                <PrivateChat
+                  myKey={user?.id || ""}
+                  pickerFetchAction="list_chat_tutors"
+                  pickerLabel="＋ Chat a tutor"
+                  emptyListHint="No conversations yet — pick a tutor above to start a private chat about your child's sessions."
+                />
+              )}
+
               {/* Profile */}
               {activeTab === "profile" && (
                 <ProfilePanel
@@ -420,6 +444,7 @@ export default function ParentDashboard() {
                   saved={profileSaved}
                 />
               )}
+              </div>
             </div>
           </div>
         </div>

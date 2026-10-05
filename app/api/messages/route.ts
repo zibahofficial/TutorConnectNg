@@ -88,15 +88,8 @@ export async function GET(req: NextRequest) {
   const auth = getAuthUser(req);
   if (!auth) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 
-  // Tutors may act as a demo tutor identity (e.g. "t1") so the tutor
-  // dashboard can read/reply to chats on its demo bookings — mirroring how
-  // the tutor dashboard already views the demo tutor's bookings. Students
-  // can only ever read their own threads.
-  const asIdentity = params.get("as");
-  if (asIdentity && auth.role !== "tutor") {
-    return NextResponse.json({ error: "Tutor access required for this identity." }, { status: 403 });
-  }
-  const myKey = asIdentity || auth.id;
+  // Every user chats strictly as their own account — no impersonation.
+  const myKey = auth.id;
 
   const withKey = params.get("with");
   const wantConversations = params.get("conversations") === "1";
@@ -186,21 +179,15 @@ export async function POST(req: NextRequest) {
 
   const to = String(body.to || "").trim();
   const text = String(body.body || "").trim().slice(0, 2000);
-  const fromOverride = body.from ? String(body.from).trim() : "";
 
   if (!to) return NextResponse.json({ error: "Recipient (to) is required." }, { status: 400 });
   if (!text) return NextResponse.json({ error: "Message body is required." }, { status: 400 });
-  if (fromOverride && fromOverride !== auth.id && auth.role !== "tutor") {
-    return NextResponse.json({ error: "Cannot send as another identity." }, { status: 403 });
-  }
-
-  const senderKey = fromOverride || auth.id;
-  if (senderKey === to) {
+  if (to === auth.id) {
     return NextResponse.json({ error: "Cannot message yourself." }, { status: 400 });
   }
 
-  const senderName =
-    senderKey === auth.id ? auth.fullName : (await resolveName(senderKey)) ?? auth.fullName;
+  const senderKey = auth.id;
+  const senderName = auth.fullName;
   const recipientName = (await resolveName(to)) ?? "User";
 
   const message: ChatMessage = {

@@ -526,6 +526,33 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ source: "mock", savedTutors: saved });
     }
 
+    if (action === "list_chat_tutors") {
+      const auth = await getUserFromRequest(req);
+      if (auth instanceof NextResponse) return auth;
+
+      // Real registered tutor accounts only (never mock/demo data).
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT id, full_name FROM users WHERE role = 'tutor' AND id <> ${auth.user.id} ORDER BY full_name LIMIT 200
+          `;
+          return NextResponse.json({
+            source: "neon",
+            tutors: rows.map((r) => ({ id: r.id, fullName: r.full_name })),
+          });
+        } catch (err) {
+          console.error("Neon tutor list failed:", err);
+        }
+      }
+
+      const store = getUserStore();
+      const tutors = Array.from(store.values())
+        .filter((u) => u.role === "tutor" && u.id !== auth.user.id)
+        .map((u) => ({ id: u.id, fullName: u.fullName }));
+      return NextResponse.json({ source: "mock", tutors });
+    }
+
     if (action === "availability") {
       const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
