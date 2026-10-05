@@ -103,6 +103,59 @@ const TEACHING_MODES = ["Online & in person", "Online only", "In person only"];
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const ALLOWED_PHOTO_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
+/**
+ * Terms/privacy consent checkbox shared by the student, tutor, and parent
+ * signup flows. The document links open in a new tab (so the user never
+ * loses form progress) and stop click propagation so tapping a link never
+ * toggles the checkbox.
+ */
+function TermsConsent({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-slate-600">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
+        />
+        <span>
+          I agree to the TutorConnect{" "}
+          <Link
+            href="/terms"
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link
+            href="/privacy"
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Privacy Policy
+          </Link>
+          , and confirm the information above is accurate.
+        </span>
+      </label>
+      <p className="mt-1.5 text-[11px] text-slate-400">
+        Documents open in a new tab — your form progress is preserved.
+      </p>
+    </div>
+  );
+}
+
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -554,15 +607,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 </div>
               )}
 
-              <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms}
-                  onChange={(e) => setAgreeTerms(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
-                />
-                I agree to the TutorConnect terms of service and privacy policy, and confirm the information above is accurate.
-              </label>
+              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} />
             </>
           )}
 
@@ -907,15 +952,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 </select>
               </div>
 
-              <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms}
-                  onChange={(e) => setAgreeTerms(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
-                />
-                I agree to the TutorConnect terms of service and privacy policy, and confirm the information above is accurate.
-              </label>
+              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} />
             </>
           )}
 {isParentFlow && (
@@ -1166,15 +1203,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
       </div>
     </div>
 
-    <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
-      <input
-        type="checkbox"
-        checked={agreeTerms}
-        onChange={(e) => setAgreeTerms(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
-      />
-      I agree to the TutorConnect terms of service and privacy policy, and confirm the information above is accurate.
-    </label>
+    <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} />
   </>
 )}
                
