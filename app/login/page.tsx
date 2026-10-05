@@ -3,13 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { GraduationCap, Loader2, Lock, Mail } from "lucide-react";
+import { Eye, EyeOff, GraduationCap, Loader2, Lock, Mail } from "lucide-react";
 import LegalModal, { LegalLink, type LegalDoc } from "@/components/LegalModal";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
@@ -71,12 +72,20 @@ export default function LoginPage() {
               <Lock size={16} className="text-slate-400" />
               <input
                 required
-                type="password"
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-transparent text-sm focus:outline-none"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                className="shrink-0 text-slate-400 hover:text-slate-600"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
           </div>
 
