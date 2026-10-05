@@ -23,17 +23,49 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const tutorId = params.get("tutorId");
   const status = params.get("status");
+  const studentId = params.get("studentId");
 
   if (hasDatabase) {
     try {
       const typedSql = sql as unknown as SqlTag;
-      const rows = await typedSql`
-        SELECT b.*, u.full_name AS student_name
-        FROM bookings b
-        JOIN users u ON u.id = b.student_id
-        ORDER BY b.created_at DESC
-        LIMIT 100
-      `;
+      // Apply the same filters the mock branch applies so dashboards scoped
+      // to one tutor/status/student work identically in database mode.
+      let rows: Record<string, unknown>[];
+      if (tutorId && status) {
+        rows = await typedSql`
+          SELECT b.*, u.full_name AS student_name
+          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          WHERE b.tutor_id = ${tutorId} AND b.status = ${status}
+          ORDER BY b.created_at DESC LIMIT 100
+        `;
+      } else if (tutorId) {
+        rows = await typedSql`
+          SELECT b.*, u.full_name AS student_name
+          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          WHERE b.tutor_id = ${tutorId}
+          ORDER BY b.created_at DESC LIMIT 100
+        `;
+      } else if (status) {
+        rows = await typedSql`
+          SELECT b.*, u.full_name AS student_name
+          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          WHERE b.status = ${status}
+          ORDER BY b.created_at DESC LIMIT 100
+        `;
+      } else if (studentId) {
+        rows = await typedSql`
+          SELECT b.*, u.full_name AS student_name
+          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          WHERE b.student_id = ${studentId}
+          ORDER BY b.created_at DESC LIMIT 100
+        `;
+      } else {
+        rows = await typedSql`
+          SELECT b.*, u.full_name AS student_name
+          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          ORDER BY b.created_at DESC LIMIT 100
+        `;
+      }
       if (rows) {
         return NextResponse.json({ source: "neon", bookings: rows });
       }

@@ -310,6 +310,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 bio,
                 yearsExperience,
                 ratePerSession,
+                hourlyRate: ratePerSession ? Number(ratePerSession) : undefined,
                 teachingMode,
                 subjects: selectedSubjects,
                 qualification: qualification || undefined,
@@ -422,7 +423,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-transparent text-sm focus:outline-none"
-                    placeholder="you@example.com"
+                    placeholder="you@gmail.com"
                   />
                 </div>
               </div>
@@ -612,7 +613,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-transparent text-sm focus:outline-none"
-                    placeholder="you@example.com"
+                    placeholder="you@gmail.com"
                   />
                 </div>
               </div>
@@ -966,7 +967,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="w-full bg-transparent text-sm focus:outline-none"
-          placeholder="you@example.com"
+          placeholder="you@gmail.com"
         />
       </div>
     </div>

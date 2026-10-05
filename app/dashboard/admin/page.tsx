@@ -51,6 +51,7 @@ export default function AdminDashboard() {
       if (user.role !== "admin") {
         router.replace("/");
       } else {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of localStorage auth state after hydration
         setAuthChecked(true);
       }
     } catch {
@@ -61,7 +62,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!authChecked) return;
     const token = localStorage.getItem("tutorconnect_token") || "";
-    fetch(`/api/auth?action=admin_list_users${token ? `?token=${token}` : ""}`)
+    fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ action: "admin_list_users" }),
+    })
       .then((res) => res.json())
       .then((data) => {
         setAdminUsers(data.users ?? []);
@@ -288,7 +296,7 @@ export default function AdminDashboard() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold uppercase" style={{ backgroundColor: roleColor(u.role), color: roleTextColor(u.role) }}>
+                      <span className="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold uppercase text-white" style={{ backgroundColor: roleColor(u.role) }}>
                         {u.role}
                       </span>
                     </td>
@@ -342,8 +350,4 @@ function roleColor(role: string): string {
     case "parent": return "#10b981";
     default: return "#94a3b8";
   }
-}
-
-function roleTextColor(role: string): string {
-  return "#ffffff";
 }

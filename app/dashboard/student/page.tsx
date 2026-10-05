@@ -96,6 +96,7 @@ export default function StudentDashboard() {
       if (stored) {
         const parsed = JSON.parse(stored) as StoredUser;
         if (parsed && (parsed.role === "student" || parsed.role === "parent")) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of localStorage auth state after hydration
           setUser(parsed);
           setProfileForm(parsed);
         } else if (parsed?.full_name || parsed?.email) {
@@ -120,6 +121,7 @@ export default function StudentDashboard() {
     if (!authChecked || !user) return;
     let stored: string[] = [];
     try { stored = JSON.parse(localStorage.getItem("tutorconnect_saved_tutors") || "[]"); } catch {}
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate cached saved-tutor ids once after mount
     setSavedTutorIds(stored);
     const token = localStorage.getItem("tutorconnect_token") || "";
     fetch(`/api/auth?action=saved_tutors${token ? `&token=${token}` : ""}`)
@@ -133,7 +135,7 @@ export default function StudentDashboard() {
       })
       .catch(() => {});
 
-    fetch("/api/bookings")
+    fetch(`/api/bookings${user?.id ? `?studentId=${encodeURIComponent(user.id)}` : ""}`)
       .then((res) => res.json())
       .then((data) => {
         const all = data.bookings ?? [];
@@ -206,6 +208,7 @@ export default function StudentDashboard() {
         body: JSON.stringify({
           bookingId: reviewTarget.id,
           tutorId: reviewTarget.tutorId,
+          studentId: user?.id || undefined,
           studentName: user?.full_name || "Student",
           rating,
           comment,
@@ -228,6 +231,15 @@ export default function StudentDashboard() {
     } catch {
       // demo-only persistence; safe to ignore storage errors
     }
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ action: "update_profile", updates: { ...profileForm } }),
+    }).catch(() => {});
     setProfileSaved(true);
     setTimeout(() => setProfileSaved(false), 2500);
   }
@@ -241,10 +253,14 @@ export default function StudentDashboard() {
     if (!user?.email) return;
     setDeleting(true);
     try {
+      const token = localStorage.getItem("tutorconnect_token") || "";
       const res = await fetch("/api/auth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete_account", email: user.email, password: "delete" }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "delete_account" }),
       });
       if (!res.ok) throw new Error("Could not delete account");
     } catch {

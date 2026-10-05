@@ -56,6 +56,7 @@ export default function TutorDashboard() {
         router.replace("/");
         return;
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of localStorage auth state after hydration
       setAuthUser(parsed);
     } catch {
       router.replace("/login");
@@ -74,10 +75,14 @@ export default function TutorDashboard() {
     if (!authUser?.email) return;
     setDeleting(true);
     try {
+      const token = localStorage.getItem("tutorconnect_token") || "";
       const res = await fetch("/api/auth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete_account", email: authUser.email, password: "delete" }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action: "delete_account" }),
       });
       if (!res.ok) throw new Error("Could not delete account");
     } catch {
@@ -95,6 +100,21 @@ export default function TutorDashboard() {
       .then((data) => setBookings(data.bookings ?? []))
       .finally(() => setLoading(false));
   }, []);
+
+  // Load the logged-in tutor's saved weekly availability (falls back to the
+  // in-memory store in demo mode).
+  useEffect(() => {
+    if (!authChecked || !authUser) return;
+    const token = localStorage.getItem("tutorconnect_token") || "";
+    fetch(`/api/auth?action=availability${token ? `&token=${token}` : ""}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.availability)) {
+          setAvailability(data.availability);
+        }
+      })
+      .catch(() => {});
+  }, [authChecked, authUser]);
 
   const stats = useMemo(() => {
     const pending = bookings.filter((b) => b.status === "pending").length;
@@ -140,6 +160,7 @@ export default function TutorDashboard() {
   }
 }
   async function addSlot() {
+    if (newSlot.end <= newSlot.start) return;
     const token = localStorage.getItem("tutorconnect_token") || "";
     setAvailability((prev) => [...prev, newSlot]);
     try {
@@ -316,9 +337,16 @@ export default function TutorDashboard() {
                 className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs focus:border-navy-600 focus:outline-none"
               />
             </div>
-            <button onClick={addSlot} className="btn-outline w-full !py-2 text-sm">
+            <button
+              onClick={addSlot}
+              disabled={newSlot.end <= newSlot.start}
+              className="btn-outline w-full !py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               <Plus size={15} /> Add Slot
             </button>
+            {newSlot.end <= newSlot.start && (
+              <p className="text-center text-xs text-rose-500">End time must be after start time.</p>
+            )}
           </div>
         </div>
       </div>

@@ -5,33 +5,25 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Award,
   BookOpen,
   Calendar,
   CalendarDays,
-  Check,
   Clock3,
   Edit3,
   Laptop,
   LayoutGrid,
-  Mail,
   MapPin,
-  Minus,
   Plus,
   Receipt,
-  Save,
-  Share2,
   Trash2,
   User,
   UserCheck,
   Wallet,
-  X,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
-import { TUTORS } from "@/lib/mock-data";
 import type { Booking } from "@/lib/types";
 import type { Child } from "@/lib/auth-store";
 
@@ -109,6 +101,7 @@ export default function ParentDashboard() {
       if (stored) {
         const parsed = JSON.parse(stored) as StoredUser;
         if (parsed && parsed.role === "parent") {
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of localStorage auth state after hydration
           setUser(parsed);
           setProfileForm(parsed);
         } else if (parsed?.full_name || parsed?.email) {
@@ -144,7 +137,7 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    fetch("/api/bookings")
+    fetch(`/api/bookings${user.id ? `?studentId=${encodeURIComponent(user.id)}` : ""}`)
       .then((res) => res.json())
       .then((data) => {
         const all: Booking[] = data.bookings ?? [];
@@ -390,7 +383,7 @@ export default function ParentDashboard() {
               {/* Children */}
               {activeTab === "children" && (
                 <ChildrenPanel
-                  children={children}
+                  items={children}
                   loading={childrenLoading}
                   showForm={showChildForm}
                   onToggleForm={() => setShowChildForm(!showChildForm)}
@@ -410,11 +403,7 @@ export default function ParentDashboard() {
 
               {/* Bookings */}
               {activeTab === "bookings" && (
-                <BookingsPanel
-                  bookings={bookings}
-                  loading={loading}
-                  studentName={displayName}
-                />
+                <BookingsPanel bookings={bookings} loading={loading} />
               )}
 
               {/* Payments */}
@@ -429,7 +418,6 @@ export default function ParentDashboard() {
                   onChangeProfile={setProfileForm}
                   onSave={saveProfile}
                   saved={profileSaved}
-                  userId={user?.id}
                 />
               )}
             </div>
@@ -475,7 +463,7 @@ export default function ParentDashboard() {
 }
 
 function ChildrenPanel({
-  children,
+  items,
   loading,
   showForm,
   onToggleForm,
@@ -491,7 +479,7 @@ function ChildrenPanel({
   setShowChildForm,
   setEditingChild,
 }: {
-  children: Child[];
+  items: Child[];
   loading: boolean;
   showForm: boolean;
   onToggleForm: () => void;
@@ -582,14 +570,14 @@ function ChildrenPanel({
 
       {loading ? (
         <p className="px-6 py-10 text-center text-sm text-slate-400">Loading children…</p>
-      ) : children.length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="px-6 py-8 text-center">
           <UserCheck size={40} className="mx-auto mb-2 text-slate-200" />
           <p className="text-sm text-slate-500">No children added yet.</p>
         </div>
       ) : (
         <ul className="divide-y divide-slate-100">
-          {children.map((child) => (
+          {items.map((child) => (
             <li key={child.id} className="flex items-center justify-between px-6 py-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-100 font-display text-sm font-bold text-navy-700">
@@ -707,11 +695,9 @@ function PaymentSummary({ payments }: { payments: Booking[] }) {
 function BookingsPanel({
   bookings,
   loading,
-  studentName,
 }: {
   bookings: Booking[];
   loading: boolean;
-  studentName: string;
 }) {
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-card">
@@ -813,13 +799,11 @@ function ProfilePanel({
   onChangeProfile,
   onSave,
   saved,
-  userId,
 }: {
   profileForm: StoredUser;
   onChangeProfile: React.Dispatch<React.SetStateAction<StoredUser>>;
   onSave: (e: React.FormEvent) => void;
   saved: boolean;
-  userId?: string;
 }) {
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-card">
