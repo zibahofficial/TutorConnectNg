@@ -308,7 +308,6 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
     if (password !== confirmPassword) return "Passwords do not match.";
   if (!city.trim()) return "Please tell us your city.";
   if (!stateValue) return "Please select your state.";
-  if (!childName.trim()) return "Please enter the child's name.";
   if (!childAge) return "Please enter the child's age.";
   if (!educationLevel) return "Please select an educational level.";
   if (!tutorBudget) return "Please enter your tutor budget.";
@@ -383,7 +382,6 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
       phone,
       city,
       state: stateValue,
-      childName,
       childAge,
       educationLevel,
       tutorBudget,
@@ -1138,35 +1136,23 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
         About the learner
       </p>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-            Child&apos;s name <span className="text-rose-500">*</span>
-          </label>
-          <input
-            required
-            value={childName}
-            onChange={(e) => setChildName(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
-            placeholder="e.g. Chinedu"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-            Child&apos;s age <span className="text-rose-500">*</span>
-          </label>
-          <input
-            required
-            type="number"
-            min={1}
-            max={100}
-            value={childAge}
-            onChange={(e) => setChildAge(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
-            placeholder="e.g. 12"
-          />
-        </div>
+      <div>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+          Child&apos;s age <span className="text-rose-500">*</span>
+        </label>
+        <input
+          required
+          type="number"
+          min={1}
+          max={100}
+          value={childAge}
+          onChange={(e) => setChildAge(e.target.value)}
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+          placeholder="e.g. 12"
+        />
+        <p className="mt-1.5 text-xs text-slate-400">
+          You can add and manage your child&apos;s details anytime from your dashboard.
+        </p>
       </div>
     </div>
 

@@ -244,3 +244,40 @@ export async function PATCH(req: NextRequest) {
   }
   return NextResponse.json({ source: "mock", booking });
 }
+
+export async function DELETE(req: NextRequest) {
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const id = (body.id as string) || "";
+  if (!id) {
+    return NextResponse.json({ error: "id is required." }, { status: 400 });
+  }
+
+  // Permanently remove a booking record (used by the parent/student
+  // dashboards' delete action).
+  if (hasDatabase) {
+    try {
+      const typedSql = sql as unknown as SqlTag;
+      const deleted = await typedSql`DELETE FROM bookings WHERE id = ${id} RETURNING id`;
+      if (deleted.length === 0) {
+        return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+      }
+      return NextResponse.json({ source: "neon", deleted: true });
+    } catch (err) {
+      console.error("Neon booking delete failed, falling back to in-memory store:", err);
+    }
+  }
+
+  const store = getBookingStore();
+  const idx = store.findIndex((b) => b.id === id);
+  if (idx < 0) {
+    return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+  }
+  store.splice(idx, 1);
+  return NextResponse.json({ source: "mock", deleted: true });
+}

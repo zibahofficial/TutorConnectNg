@@ -500,7 +500,7 @@ export async function GET(req: NextRequest) {
         try {
           const typedSql = sql as unknown as SqlTag;
           const rows = await typedSql`
-            SELECT id, child_name, child_age, educational_level FROM parent_profiles WHERE user_id = ${auth.user.id}
+            SELECT id, child_name, child_age, educational_level FROM parent_profiles WHERE user_id = ${auth.user.id} AND child_name IS NOT NULL
           `;
           return NextResponse.json({ source: "neon", children: rows });
         } catch (err) {
