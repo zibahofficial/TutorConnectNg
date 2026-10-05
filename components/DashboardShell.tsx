@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   GraduationCap,
+  Home,
   LayoutDashboard,
   LogOut,
+  Search,
   ShieldCheck,
   UserRound,
 } from "lucide-react";
@@ -50,12 +52,26 @@ export default function DashboardShell({
               TutorConnect NG <span className="font-medium text-slate-400">· Dashboard</span>
             </span>
           </Link>
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-navy-700"
-          >
-            <LogOut size={15} /> Exit to site
-          </button>
+          <div className="flex items-center gap-1">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <Home size={15} /> Home
+            </Link>
+            <Link
+              href="/tutors"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <Search size={15} /> Find Tutors
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
+            >
+              <LogOut size={15} /> Log out
+            </button>
+          </div>
         </div>
         <div className="container-app flex gap-1 overflow-x-auto pb-3">
           {TABS.map((tab) => {

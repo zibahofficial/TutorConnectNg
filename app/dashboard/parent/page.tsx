@@ -10,8 +10,10 @@ import {
   CalendarDays,
   Clock3,
   Edit3,
+  Home,
   Laptop,
   LayoutGrid,
+  LogOut,
   MapPin,
   MessageCircle,
   Pencil,
@@ -312,6 +314,16 @@ export default function ParentDashboard() {
     router.replace("/");
   }
 
+  function handleLogout() {
+    try {
+      localStorage.removeItem("tutorconnect_token");
+      localStorage.removeItem("tutorconnect_user");
+    } catch {
+      // ignore storage errors in strict private modes
+    }
+    router.replace("/");
+  }
+
   async function handleCancelBooking() {
     if (!cancelTarget || bookingActionBusy) return;
     const target = cancelTarget;
@@ -386,6 +398,61 @@ export default function ParentDashboard() {
       <Navbar />
       <main className="flex-1 bg-slate-50">
         <div className="container-app py-8 lg:py-10">
+          {/* Quick navigation bar */}
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-card">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <Home size={14} /> Home
+            </Link>
+            <Link
+              href="/tutors"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <BookOpen size={14} /> Find Tutors
+            </Link>
+            <button
+              onClick={() => goToTab("children")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "children" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <UserCheck size={14} /> My Children
+            </button>
+            <button
+              onClick={() => goToTab("bookings")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "bookings" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <Calendar size={14} /> My Bookings
+            </button>
+            <button
+              onClick={() => goToTab("chat")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "chat" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <MessageCircle size={14} /> Chat
+            </button>
+            <button
+              onClick={() => goToTab("profile")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "profile" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <User size={14} /> Profile
+            </button>
+            <span className="ml-auto" />
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100"
+            >
+              <LogOut size={14} /> Log out
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
             <aside className="lg:sticky lg:top-24 lg:h-fit">
               <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-card">
