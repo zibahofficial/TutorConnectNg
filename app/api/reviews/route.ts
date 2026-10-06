@@ -26,9 +26,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { bookingId, tutorId, studentName, rating, comment } = body as {
+  const { bookingId, tutorId, studentId, studentName, rating, comment } = body as {
     bookingId: string;
     tutorId: string;
+    studentId: string;
     studentName: string;
     rating: number;
     comment: string;
@@ -50,8 +51,8 @@ export async function POST(req: NextRequest) {
     try {
       const typedSql = sql as unknown as SqlTag;
       const inserted = await typedSql`
-        INSERT INTO reviews (booking_id, tutor_id, student_name, rating, comment)
-        VALUES (${bookingId || null}, ${tutorId}, ${studentName}, ${rating}, ${comment || ""})
+        INSERT INTO reviews (booking_id, tutor_id, student_id, student_name, rating, comment)
+        VALUES (${bookingId || null}, ${tutorId}, ${studentId || null}, ${studentName}, ${rating}, ${comment || ""})
         RETURNING id, student_name AS "studentName", rating, comment, created_at AS "createdAt"
       `;
       return NextResponse.json({ source: "neon", review: inserted[0] }, { status: 201 });

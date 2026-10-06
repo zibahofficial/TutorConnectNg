@@ -64,7 +64,7 @@ export default function HeroSlider() {
                   transition={{ type: "spring", duration: 0.5 }}
                 />
               )}
-              <span className="relative z-10">Inspiration &amp; Teach</span>
+              <span className="relative z-10">Teach and Earn</span>
             </button>
           </div>
         </div>

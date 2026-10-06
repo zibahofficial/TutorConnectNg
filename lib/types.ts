@@ -86,3 +86,27 @@ export interface SubjectCard {
   tutorCount: number;
   accent: string;
 }
+
+/**
+ * A private 1-on-1 chat message between two parties (student ↔ tutor).
+ * Party keys are opaque ids: a user id, a mock tutor id (e.g. "t1"), or a
+ * tutor_profiles id in database mode. Names are denormalized onto the
+ * message so both sides can render the thread without extra lookups.
+ */
+export interface ChatMessage {
+  id: string;
+  senderKey: string;
+  senderName: string;
+  recipientKey: string;
+  recipientName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface ChatConversation {
+  partnerKey: string;
+  partnerName: string;
+  lastBody: string;
+  lastAt: string;
+  lastFromMe: boolean;
+}

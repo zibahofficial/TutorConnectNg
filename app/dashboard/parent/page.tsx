@@ -1,26 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Award,
   BookOpen,
   Calendar,
   CalendarDays,
-  Check,
   Clock3,
   Edit3,
+  Home,
   Laptop,
   LayoutGrid,
-  Mail,
+  LogOut,
   MapPin,
-  Minus,
+  MessageCircle,
+  Pencil,
   Plus,
-  Receipt,
-  Save,
-  Share2,
   Trash2,
   User,
   UserCheck,
@@ -28,20 +25,20 @@ import {
   X,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
+import PrivateChat from "@/components/PrivateChat";
 import Footer from "@/components/Footer";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
-import { TUTORS } from "@/lib/mock-data";
 import type { Booking } from "@/lib/types";
 import type { Child } from "@/lib/auth-store";
 
-type TabId = "overview" | "children" | "bookings" | "payments" | "profile";
+type TabId = "overview" | "children" | "bookings" | "chat" | "profile";
 
 const NAV_ITEMS: { id: TabId; label: string; icon: typeof LayoutGrid }[] = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
   { id: "children", label: "My Children", icon: UserCheck },
   { id: "bookings", label: "Bookings", icon: BookOpen },
-  { id: "payments", label: "Payment History", icon: Receipt },
+  { id: "chat", label: "Chat with Tutors", icon: MessageCircle },
   { id: "profile", label: "Profile", icon: User },
 ];
 
@@ -85,9 +82,28 @@ const GRADE_LEVELS = [
   "Adult Learner",
 ];
 
+/** Headers for /api/bookings calls — attaches the logged-in user's token. */
+function bookingAuthHeaders() {
+  if (typeof window === "undefined") return { "Content-Type": "application/json" };
+  const token = localStorage.getItem("tutorconnect_token") || "";
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function ParentDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  // Switch tab and smoothly scroll the user down to the content.
+  function goToTab(tab: TabId) {
+    setActiveTab(tab);
+    requestAnimationFrame(() => {
+      contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
   const [user, setUser] = useState<StoredUser | null>(null);
   const [profileForm, setProfileForm] = useState<StoredUser>({});
   const [profileSaved, setProfileSaved] = useState(false);
@@ -103,12 +119,19 @@ export default function ParentDashboard() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Booking edit / cancel / delete (parents can fix their own mistakes)
+  const [editTarget, setEditTarget] = useState<Booking | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Booking | null>(null);
+  const [bookingActionBusy, setBookingActionBusy] = useState(false);
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem("tutorconnect_user");
       if (stored) {
         const parsed = JSON.parse(stored) as StoredUser;
         if (parsed && parsed.role === "parent") {
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of localStorage auth state after hydration
           setUser(parsed);
           setProfileForm(parsed);
         } else if (parsed?.full_name || parsed?.email) {
@@ -144,7 +167,7 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    fetch("/api/bookings")
+    fetch(`/api/bookings${user.id ? `?studentId=${encodeURIComponent(user.id)}` : ""}`, { headers: bookingAuthHeaders() })
       .then((res) => res.json())
       .then((data) => {
         const all: Booking[] = data.bookings ?? [];
@@ -168,7 +191,6 @@ export default function ParentDashboard() {
   }, [bookings]);
 
   const upcomingBookings = bookings.filter((b) => b.status === "accepted" || b.status === "pending");
-  const paymentHistory = bookings.filter((b) => b.status === "completed");
 
   function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -302,6 +324,73 @@ export default function ParentDashboard() {
     router.replace("/");
   }
 
+  function handleLogout() {
+    try {
+      localStorage.removeItem("tutorconnect_token");
+      localStorage.removeItem("tutorconnect_user");
+    } catch {
+      // ignore storage errors in strict private modes
+    }
+    router.replace("/");
+  }
+
+  async function handleCancelBooking() {
+    if (!cancelTarget || bookingActionBusy) return;
+    const target = cancelTarget;
+    setBookingActionBusy(true);
+    try {
+      await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: bookingAuthHeaders(),
+        body: JSON.stringify({ id: target.id, status: "cancelled" }),
+      });
+    } catch {
+      // still update locally; the list re-fetches on next dashboard load
+    }
+    setBookings((prev) => prev.map((b) => (b.id === target.id ? { ...b, status: "cancelled" as const } : b)));
+    setCancelTarget(null);
+    setBookingActionBusy(false);
+  }
+
+  async function handleDeleteBooking() {
+    if (!deleteTarget || bookingActionBusy) return;
+    const target = deleteTarget;
+    setBookingActionBusy(true);
+    try {
+      await fetch("/api/bookings", {
+        method: "DELETE",
+        headers: bookingAuthHeaders(),
+        body: JSON.stringify({ id: target.id }),
+      });
+    } catch {
+      // still update locally; the list re-fetches on next dashboard load
+    }
+    setBookings((prev) => prev.filter((b) => b.id !== target.id));
+    setDeleteTarget(null);
+    setBookingActionBusy(false);
+  }
+
+  async function handleSaveBookingEdit(form: EditBookingForm) {
+    if (!editTarget || bookingActionBusy) return;
+    const target = editTarget;
+    setBookingActionBusy(true);
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: bookingAuthHeaders(),
+        body: JSON.stringify({ id: target.id, edit: { ...form } }),
+      });
+      if (res.ok) {
+        setBookings((prev) => prev.map((b) => (b.id === target.id ? { ...b, ...form } : b)));
+        setEditTarget(null);
+      }
+    } catch {
+      // ignore; the next load re-syncs
+    } finally {
+      setBookingActionBusy(false);
+    }
+  }
+
   const displayName = user?.full_name || "Parent";
   const displayEmail = user?.email || "parent@tutorconnect.ng";
   const displayAvatar = user?.avatarUrl || "";
@@ -319,6 +408,61 @@ export default function ParentDashboard() {
       <Navbar />
       <main className="flex-1 bg-slate-50">
         <div className="container-app py-8 lg:py-10">
+          {/* Quick navigation bar */}
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-card">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <Home size={14} /> Home
+            </Link>
+            <Link
+              href="/tutors"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-navy-50 hover:text-navy-700"
+            >
+              <BookOpen size={14} /> Find Tutors
+            </Link>
+            <button
+              onClick={() => goToTab("children")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "children" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <UserCheck size={14} /> My Children
+            </button>
+            <button
+              onClick={() => goToTab("bookings")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "bookings" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <Calendar size={14} /> My Bookings
+            </button>
+            <button
+              onClick={() => goToTab("chat")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "chat" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <MessageCircle size={14} /> Chat
+            </button>
+            <button
+              onClick={() => goToTab("profile")}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                activeTab === "profile" ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-navy-50 hover:text-navy-700"
+              }`}
+            >
+              <User size={14} /> Profile
+            </button>
+            <span className="ml-auto" />
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100"
+            >
+              <LogOut size={14} /> Log out
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
             <aside className="lg:sticky lg:top-24 lg:h-fit">
               <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-card">
@@ -344,7 +488,7 @@ export default function ParentDashboard() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveTab(item.id)}
+                      onClick={() => goToTab(item.id)}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors ${
                         active ? "bg-navy-700 text-white" : "text-slate-600 hover:bg-slate-100"
                       }`}
@@ -379,18 +523,19 @@ export default function ParentDashboard() {
                 <StatCard icon={Wallet} label="Total Spent" value={stats.totalSpent > 0 ? formatNaira(stats.totalSpent) : "—"} accent="rose" live />
               </div>
 
+              {/* Tab content */}
+              <div ref={contentRef} className="scroll-mt-24">
               {/* Overview */}
               {activeTab === "overview" && (
                 <div className="mt-6 space-y-6">
                   <UpcomingBookingsPanel bookings={upcomingBookings} loading={loading} />
-                  <PaymentSummary payments={paymentHistory} />
                 </div>
               )}
 
               {/* Children */}
               {activeTab === "children" && (
                 <ChildrenPanel
-                  children={children}
+                  items={children}
                   loading={childrenLoading}
                   showForm={showChildForm}
                   onToggleForm={() => setShowChildForm(!showChildForm)}
@@ -413,13 +558,20 @@ export default function ParentDashboard() {
                 <BookingsPanel
                   bookings={bookings}
                   loading={loading}
-                  studentName={displayName}
+                  onEdit={setEditTarget}
+                  onCancel={setCancelTarget}
+                  onDelete={setDeleteTarget}
                 />
               )}
 
-              {/* Payments */}
-              {activeTab === "payments" && (
-                <PaymentsPanel payments={paymentHistory} loading={loading} />
+              {/* Chat */}
+              {activeTab === "chat" && (
+                <PrivateChat
+                  myKey={user?.id || ""}
+                  pickerFetchAction="list_chat_tutors"
+                  pickerLabel="＋ Chat a tutor"
+                  emptyListHint="No conversations yet — pick a tutor above to start a private chat about your child's sessions."
+                />
               )}
 
               {/* Profile */}
@@ -429,14 +581,41 @@ export default function ParentDashboard() {
                   onChangeProfile={setProfileForm}
                   onSave={saveProfile}
                   saved={profileSaved}
-                  userId={user?.id}
                 />
               )}
+              </div>
             </div>
           </div>
         </div>
       </main>
       <Footer />
+
+      {editTarget && (
+        <EditBookingModal
+          booking={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSave={handleSaveBookingEdit}
+          saving={bookingActionBusy}
+        />
+      )}
+
+      {cancelTarget && (
+        <CancelBookingModal
+          booking={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={handleCancelBooking}
+          busy={bookingActionBusy}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteBookingModal
+          booking={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteBooking}
+          busy={bookingActionBusy}
+        />
+      )}
 
       {showDeleteConfirm && (
         <div
@@ -475,7 +654,7 @@ export default function ParentDashboard() {
 }
 
 function ChildrenPanel({
-  children,
+  items,
   loading,
   showForm,
   onToggleForm,
@@ -491,7 +670,7 @@ function ChildrenPanel({
   setShowChildForm,
   setEditingChild,
 }: {
-  children: Child[];
+  items: Child[];
   loading: boolean;
   showForm: boolean;
   onToggleForm: () => void;
@@ -582,14 +761,14 @@ function ChildrenPanel({
 
       {loading ? (
         <p className="px-6 py-10 text-center text-sm text-slate-400">Loading children…</p>
-      ) : children.length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="px-6 py-8 text-center">
           <UserCheck size={40} className="mx-auto mb-2 text-slate-200" />
           <p className="text-sm text-slate-500">No children added yet.</p>
         </div>
       ) : (
         <ul className="divide-y divide-slate-100">
-          {children.map((child) => (
+          {items.map((child) => (
             <li key={child.id} className="flex items-center justify-between px-6 py-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-navy-100 font-display text-sm font-bold text-navy-700">
@@ -678,45 +857,26 @@ function UpcomingBookingsPanel({
   );
 }
 
-function PaymentSummary({ payments }: { payments: Booking[] }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
-      <h2 className="mb-4 font-display font-bold text-slate-900">Payment Summary</h2>
-      {payments.length === 0 ? (
-        <p className="text-sm text-slate-500">No completed payments yet.</p>
-      ) : (
-        <div className="space-y-3">
-          {payments.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-              <div className="flex items-center gap-3">
-                <Receipt size={18} className="text-navy-600" />
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{p.subject} — {p.tutorName}</p>
-                  <p className="text-xs text-slate-500">{p.scheduledDate}</p>
-                </div>
-              </div>
-              <span className="font-display font-bold text-navy-700">{formatNaira(p.totalPrice)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function BookingsPanel({
   bookings,
   loading,
-  studentName,
+  onEdit,
+  onCancel,
+  onDelete,
 }: {
   bookings: Booking[];
   loading: boolean;
-  studentName: string;
+  onEdit: (b: Booking) => void;
+  onCancel: (b: Booking) => void;
+  onDelete: (b: Booking) => void;
 }) {
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-card">
       <div className="border-b border-slate-100 px-6 py-4">
         <h2 className="font-display font-bold text-slate-900">All Bookings</h2>
+        <p className="mt-0.5 text-xs text-slate-400">
+          You can edit or cancel a request while it is still pending, and delete any booking.
+        </p>
       </div>
       {loading ? (
         <p className="px-6 py-10 text-center text-sm text-slate-400">Loading bookings…</p>
@@ -751,10 +911,34 @@ function BookingsPanel({
                     </a>
                   )}
                 </div>
+                {b.notes && <p className="mt-1.5 text-xs italic text-slate-400">&ldquo;{b.notes}&rdquo;</p>}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <span className="font-display font-bold text-navy-700">{formatNaira(b.totalPrice)}</span>
                 <StatusBadge status={b.status} />
+                {b.status === "pending" && (
+                  <>
+                    <button
+                      onClick={() => onEdit(b)}
+                      className="inline-flex items-center gap-1 rounded-full border border-navy-200 px-3 py-1.5 text-xs font-bold text-navy-700 transition-colors hover:bg-navy-50"
+                    >
+                      <Pencil size={13} /> Edit
+                    </button>
+                    <button
+                      onClick={() => onCancel(b)}
+                      className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-600 transition-colors hover:bg-amber-100"
+                    >
+                      <X size={13} /> Cancel
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => onDelete(b)}
+                  className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100"
+                  title="Delete this booking"
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
               </div>
             </li>
           ))}
@@ -764,46 +948,293 @@ function BookingsPanel({
   );
 }
 
-function PaymentsPanel({
-  payments,
-  loading,
+interface EditBookingForm {
+  subject: string;
+  gradeLevel: string;
+  scheduledDate: string;
+  startTime: string;
+  endTime: string;
+  sessionMode: "online" | "in_person";
+  notes: string;
+  totalPrice: number;
+}
+
+const EDIT_GRADE_LEVELS = ["Primary 1-6", "JSS 1-3", "SS 1", "SS 2", "SS 3", "Undergraduate", "Adult Learner"];
+
+function hoursBetween(start: string, end: string): number {
+  const toMinutes = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  return Math.max((toMinutes(end) - toMinutes(start)) / 60, 0);
+}
+
+function EditBookingModal({
+  booking,
+  onClose,
+  onSave,
+  saving,
 }: {
-  payments: Booking[];
-  loading: boolean;
+  booking: Booking;
+  onClose: () => void;
+  onSave: (form: EditBookingForm) => void;
+  saving: boolean;
+}) {
+  const originalHours = Math.max(hoursBetween(booking.startTime, booking.endTime), 1);
+  const ratePerHour = booking.totalPrice / originalHours;
+
+  const [form, setForm] = useState<EditBookingForm>({
+    subject: booking.subject,
+    gradeLevel: booking.gradeLevel,
+    scheduledDate: booking.scheduledDate,
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    sessionMode: booking.sessionMode,
+    notes: booking.notes || "",
+    totalPrice: booking.totalPrice,
+  });
+
+  const newHours = Math.max(hoursBetween(form.startTime, form.endTime), 1);
+  const estimate = Math.round(ratePerHour * newHours);
+  const invalidTimes = form.endTime <= form.startTime;
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (invalidTimes) return;
+    onSave({ ...form, totalPrice: estimate });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+      onClick={() => !saving && onClose()}
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-soft"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="font-display text-lg font-bold text-slate-900">Edit Booking Request</h3>
+          <button
+            type="button"
+            onClick={() => !saving && onClose()}
+            className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <p className="mb-4 text-xs text-slate-400">
+          with {booking.tutorName} &middot; still <span className="font-bold text-amber-600">pending</span> (not yet approved)
+        </p>
+
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Subject</label>
+            <input
+              type="text"
+              required
+              value={form.subject}
+              onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Date</label>
+              <input
+                type="date"
+                required
+                min={new Date().toISOString().split("T")[0]}
+                value={form.scheduledDate}
+                onChange={(e) => setForm((f) => ({ ...f, scheduledDate: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Grade Level</label>
+              <select
+                value={form.gradeLevel}
+                onChange={(e) => setForm((f) => ({ ...f, gradeLevel: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              >
+                {EDIT_GRADE_LEVELS.map((g) => (
+                  <option key={g}>{g}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">Start Time</label>
+              <input
+                type="time"
+                required
+                value={form.startTime}
+                onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">End Time</label>
+              <input
+                type="time"
+                required
+                value={form.endTime}
+                onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+              />
+            </div>
+          </div>
+          {invalidTimes && <p className="text-xs font-semibold text-rose-500">End time must be after start time.</p>}
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Learning Mode</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, sessionMode: "online" }))}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  form.sessionMode === "online"
+                    ? "border-navy-600 bg-navy-50 text-navy-700"
+                    : "border-slate-200 text-slate-500 hover:border-slate-300"
+                }`}
+              >
+                <Laptop size={16} /> Online
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, sessionMode: "in_person" }))}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  form.sessionMode === "in_person"
+                    ? "border-navy-600 bg-navy-50 text-navy-700"
+                    : "border-slate-200 text-slate-500 hover:border-slate-300"
+                }`}
+              >
+                <MapPin size={16} /> In-Person
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Notes for the tutor</label>
+            <textarea
+              rows={3}
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="What should the tutor focus on?"
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+            <span className="text-sm font-medium text-slate-500">Estimated total</span>
+            <span className="font-display text-lg font-extrabold text-navy-700">{formatNaira(estimate)}</span>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Discard changes
+            </button>
+            <button type="submit" disabled={saving || invalidTimes} className="btn-primary flex-1 disabled:opacity-60">
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CancelBookingModal({
+  booking,
+  onClose,
+  onConfirm,
+  busy,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onConfirm: () => void;
+  busy: boolean;
 }) {
   return (
-    <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-card">
-      <div className="border-b border-slate-100 px-6 py-4">
-        <h2 className="font-display font-bold text-slate-900">Payment History</h2>
-      </div>
-      {loading ? (
-        <p className="px-6 py-10 text-center text-sm text-slate-400">Loading payments…</p>
-      ) : payments.length === 0 ? (
-        <div className="px-6 py-8 text-center">
-          <Receipt size={40} className="mx-auto mb-2 text-slate-200" />
-          <p className="text-sm text-slate-500">No payment history yet.</p>
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+      onClick={() => !busy && onClose()}
+    >
+      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-soft" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-display text-lg font-bold text-amber-700">Cancel this booking?</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          <span className="font-semibold text-slate-800">{booking.subject}</span> with {booking.tutorName} on{" "}
+          {booking.scheduledDate} ({booking.startTime}–{booking.endTime}) will be marked as cancelled.
+        </p>
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            Keep booking
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex-1 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-60"
+          >
+            {busy ? "Cancelling…" : "Yes, cancel it"}
+          </button>
         </div>
-      ) : (
-        <ul className="divide-y divide-slate-100">
-          {payments.map((p) => (
-            <li key={p.id} className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-navy-100">
-                  <Receipt size={18} className="text-navy-600" />
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900">{p.subject} — {p.tutorName}</p>
-                  <p className="text-xs text-slate-500">{p.scheduledDate} · {p.startTime}–{p.endTime}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="font-display font-bold text-navy-700">{formatNaira(p.totalPrice)}</span>
-                <StatusBadge status={p.status} />
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      </div>
+    </div>
+  );
+}
+
+function DeleteBookingModal({
+  booking,
+  onClose,
+  onConfirm,
+  busy,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onConfirm: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+      onClick={() => !busy && onClose()}
+    >
+      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-soft" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-display text-lg font-bold text-rose-900">Delete this booking?</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          <span className="font-semibold text-slate-800">{booking.subject}</span> with {booking.tutorName} on{" "}
+          {booking.scheduledDate} will be permanently removed from your bookings.
+        </p>
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            Keep booking
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex-1 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-60"
+          >
+            {busy ? "Deleting…" : "Yes, delete it"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -813,13 +1244,11 @@ function ProfilePanel({
   onChangeProfile,
   onSave,
   saved,
-  userId,
 }: {
   profileForm: StoredUser;
   onChangeProfile: React.Dispatch<React.SetStateAction<StoredUser>>;
   onSave: (e: React.FormEvent) => void;
   saved: boolean;
-  userId?: string;
 }) {
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-card">

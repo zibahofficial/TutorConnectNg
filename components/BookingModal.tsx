@@ -87,7 +87,7 @@ export default function BookingModal({
         body: JSON.stringify({
           tutorId: tutor.id,
           tutorName: tutor.fullName,
-          studentName: studentName || tutor.fullName,
+          studentName: studentName || "Guest Student",
           studentId,
           subject,
           gradeLevel: grade,
@@ -199,6 +199,7 @@ export default function BookingModal({
                   </label>
                   <input
                     type="date"
+                    min={new Date().toISOString().split("T")[0]}
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
@@ -282,14 +283,14 @@ export default function BookingModal({
 
               <button
                 onClick={handleSubmit}
-                disabled={submitting || !date}
+                disabled={submitting || !date || !slot}
                 className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting ? "Sending Request..." : "Send Booking Request"}
               </button>
-              {!date && (
+              {(!date || !slot) && (
                 <p className="text-center text-xs text-slate-400">
-                  Select a preferred date to continue.
+                  Select a preferred date and time slot to continue.
                 </p>
               )}
             </div>

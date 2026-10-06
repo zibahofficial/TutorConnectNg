@@ -3,7 +3,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
-import { getUserStore, getChildStore, getSavedTutorStore, getAvailabilityStore, verifyToken, type StoredUser, type Child, type SavedTutor, type AvailabilitySlot } from "@/lib/auth-store";
+import { getUserStore, getChildStore, getSavedTutorStore, getAvailabilityStore, getDocumentStore, getVerificationStore, verifyToken, DAY_TO_INDEX, INDEX_TO_DAY, type StoredUser, type Child, type SavedTutor, type AvailabilitySlot, type TutorDocument, type TutorVerification } from "@/lib/auth-store";
+import { TUTOR_DOCUMENT_TYPE_VALUES } from "@/lib/tutor-options";
 import type { UserRole } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -41,12 +42,57 @@ function validatePassword(password: string): string | null {
   return null;
 }
 
-function getUserFromRequest(req: NextRequest, allowedRoles?: UserRole[]): { user: StoredUser; email: string; role: string } | NextResponse {
+async function getUserFromRequest(req: NextRequest, allowedRoles?: UserRole[]): Promise<{ user: StoredUser; email: string; role: string } | NextResponse> {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.replace("Bearer ", "") || req.nextUrl.searchParams.get("token") || "";
   if (!token) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   const payload = verifyToken(token);
   if (!payload) return NextResponse.json({ error: "Invalid or expired token." }, { status: 401 });
+
+  // When a database is configured, the user may exist only in Postgres, so
+  // look them up there first; otherwise fall back to the in-memory store.
+  if (hasDatabase) {
+    try {
+      const typedSql = sql as unknown as SqlTag;
+      const rows = await typedSql`
+        SELECT u.id, u.email, u.password_hash, u.full_name, u.role, u.phone, u.city, u.state, u.avatar_url, u.created_at,
+               tp.headline AS tutor_headline, tp.bio AS tutor_bio,
+               tp.years_experience AS tutor_years_experience, tp.hourly_rate AS tutor_hourly_rate
+        FROM users u
+        LEFT JOIN tutor_profiles tp ON tp.user_id = u.id
+        WHERE u.email = ${payload.email}
+        LIMIT 1
+      `;
+      const row = rows[0] as Record<string, unknown> | undefined;
+      if (row) {
+        const dbUser: StoredUser = {
+          id: row.id as string,
+          email: row.email as string,
+          passwordHash: row.password_hash as string,
+          fullName: row.full_name as string,
+          role: row.role as UserRole,
+          phone: (row.phone as string) ?? undefined,
+          city: (row.city as string) ?? undefined,
+          state: (row.state as string) ?? undefined,
+          avatarUrl: (row.avatar_url as string) ?? undefined,
+          headline: (row.tutor_headline as string) ?? undefined,
+          bio: (row.tutor_bio as string) ?? undefined,
+          yearsExperience: row.tutor_years_experience != null ? Number(row.tutor_years_experience) : undefined,
+          hourlyRate: row.tutor_hourly_rate != null ? Number(row.tutor_hourly_rate) : undefined,
+          createdAt: row.created_at instanceof Date
+            ? (row.created_at as Date).toISOString()
+            : String(row.created_at ?? new Date().toISOString()),
+        };
+        if (allowedRoles && !allowedRoles.includes(dbUser.role)) {
+          return NextResponse.json({ error: "Unauthorized." }, { status: 403 });
+        }
+        return { user: dbUser, email: payload.email, role: payload.role };
+      }
+    } catch (err) {
+      console.error("Neon user lookup failed, falling back to in-memory store:", err);
+    }
+  }
+
   const store = getUserStore();
   const user = store.get(payload.email);
   if (!user) return NextResponse.json({ error: "User not found." }, { status: 401 });
@@ -155,10 +201,9 @@ export async function POST(req: NextRequest) {
 
           const avail: { day: string; start: string; end: string }[] = body.availability as { day: string; start: string; end: string }[] || [];
           for (const slot of avail) {
-            const dayMap: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
             await typedSql`
               INSERT INTO tutor_availability (tutor_id, day_of_week, start_time, end_time)
-              VALUES (${tpId}, ${dayMap[slot.day] ?? 0}, ${slot.start}, ${slot.end})
+              VALUES (${tpId}, ${DAY_TO_INDEX[slot.day] ?? 0}, ${slot.start}, ${slot.end})
             `;
           }
         }
@@ -198,7 +243,22 @@ export async function POST(req: NextRequest) {
       const token = signToken({ id, email: emailLower, role });
       return NextResponse.json({
         token,
-        user: { id, email: emailLower, full_name: fullName, role, phone: newUser.phone, city: newUser.city, state: newUser.state, avatarUrl: newUser.avatarUrl },
+        user: {
+          id,
+          email: emailLower,
+          full_name: fullName,
+          role,
+          phone: newUser.phone,
+          city: newUser.city,
+          state: newUser.state,
+          avatarUrl: newUser.avatarUrl,
+          headline: newUser.headline, teachingMode: newUser.teachingMode ?? null,
+          bio: newUser.bio,
+          yearsExperience: newUser.yearsExperience,
+          hourlyRate: newUser.hourlyRate,
+          subjects: newUser.subjects,
+          qualification: newUser.qualification,
+        },
         demo: true,
       }, { status: 201 });
     }
@@ -234,6 +294,7 @@ export async function POST(req: NextRequest) {
             city: dbUser.city,
             state: dbUser.state,
             avatarUrl: dbUser.avatar_url,
+            teachingMode: null,
           },
         });
       }
@@ -250,17 +311,16 @@ export async function POST(req: NextRequest) {
       const token = signToken({ id: user.id, email, role: user.role });
       return NextResponse.json({
         token,
-        user: { id: user.id, email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
+        user: { id: user.id, email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
         demo: true,
       });
     }
 
     if (action === "update_profile") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
       const updates = body.updates as Record<string, unknown> || {};
-      const store = getUserStore();
       const user = auth.user;
 
       const updatable = ["fullName", "phone", "city", "state", "avatarUrl", "headline", "bio", "yearsExperience", "hourlyRate", "teachingMode", "subjects", "qualification"];
@@ -288,11 +348,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({ success: true, user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification } });
+      return NextResponse.json({ success: true, user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification } });
     }
 
     if (action === "delete_account") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
       if (auth.user.role === "admin") {
@@ -303,12 +363,12 @@ export async function POST(req: NextRequest) {
       const children = getChildStore();
       children.delete(auth.user.id);
       const saved = getSavedTutorStore();
-      const idx = saved.findIndex((s) => s.userId === auth.user.id);
-      if (idx >= 0) saved.splice(idx, 1);
+      for (let i = saved.length - 1; i >= 0; i--) {
+        if (saved[i].userId === auth.user.id) saved.splice(i, 1);
+      }
       const availStore = getAvailabilityStore();
-      const availIdx = availStore.findIndex((a) => a.tutorId === auth.user.id);
-      while (availIdx >= 0) {
-        availStore.splice(availIdx, 1);
+      for (let i = availStore.length - 1; i >= 0; i--) {
+        if (availStore[i].tutorId === auth.user.id) availStore.splice(i, 1);
       }
 
       if (hasDatabase) {
@@ -331,16 +391,53 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "get_user") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
       const user = auth.user;
+
+      // Credential documents + verification status (Neon-first so uploads
+      // survive server restarts in database mode; in-memory fallback).
+      let documents = getDocumentStore().get(user.id) || [];
+      let verification: TutorVerification | null = getVerificationStore().find((v) => v.userId === user.id) || null;
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const docRows = await typedSql`
+            SELECT id, doc_type, file_name, file_data, created_at FROM tutor_documents WHERE user_id = ${user.id} ORDER BY created_at
+          `;
+          if (docRows.length) {
+            documents = docRows.map((r) => ({
+              id: String(r.id),
+              type: String(r.doc_type),
+              name: String(r.file_name),
+              dataUrl: String(r.file_data),
+              uploadedAt: new Date(String(r.created_at)).toISOString(),
+            }));
+            getDocumentStore().set(user.id, documents);
+          }
+          const verifRows = await typedSql`
+            SELECT status, applied_at, reviewed_at FROM tutor_verifications WHERE user_id = ${user.id} LIMIT 1
+          `;
+          if (verifRows.length) {
+            verification = {
+              userId: user.id,
+              status: verifRows[0].status as TutorVerification["status"],
+              appliedAt: new Date(String(verifRows[0].applied_at)).toISOString(),
+              reviewedAt: verifRows[0].reviewed_at ? new Date(String(verifRows[0].reviewed_at)).toISOString() : undefined,
+            };
+          }
+        } catch (err) {
+          console.error("Neon credential read failed:", err);
+        }
+      }
+
       return NextResponse.json({
-        user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification },
+        user: { id: user.id, email: user.email, full_name: user.fullName, role: user.role, phone: user.phone, city: user.city, state: user.state, avatarUrl: user.avatarUrl, headline: user.headline, teachingMode: user.teachingMode ?? null, bio: user.bio, yearsExperience: user.yearsExperience, hourlyRate: user.hourlyRate, subjects: user.subjects, qualification: user.qualification, documents, verification },
       });
     }
 
     if (action === "admin_list_users") {
-      const auth = getUserFromRequest(req, ["admin"]);
+      const auth = await getUserFromRequest(req, ["admin"]);
       if (auth instanceof NextResponse) return auth;
 
       if (hasDatabase) {
@@ -361,7 +458,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "admin_delete_user") {
-      const auth = getUserFromRequest(req, ["admin"]);
+      const auth = await getUserFromRequest(req, ["admin"]);
       if (auth instanceof NextResponse) return auth;
 
       const targetEmail = ((body.targetEmail as string) || "").trim().toLowerCase();
@@ -393,7 +490,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "admin_update_tutor_status") {
-      const auth = getUserFromRequest(req, ["admin"]);
+      const auth = await getUserFromRequest(req, ["admin"]);
       if (auth instanceof NextResponse) return auth;
 
       const targetId = (body.targetId as string) || "";
@@ -415,10 +512,267 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, isVerified });
     }
 
+    if (action === "add_document") {
+      const auth = await getUserFromRequest(req, ["tutor"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const type = (body.type as string) || "";
+      const name = (body.name as string) || "";
+      const dataUrl = (body.dataUrl as string) || "";
+
+      // The document type dropdown is compulsory and must be one of the
+      // known options (Government-issued ID, Academic credential, ...).
+      if (!TUTOR_DOCUMENT_TYPE_VALUES.includes(type)) {
+        return NextResponse.json({ error: "Please select a document type from the list." }, { status: 400 });
+      }
+      if (!name) return NextResponse.json({ error: "Document name is required." }, { status: 400 });
+      if (!dataUrl.startsWith("data:image/")) {
+        return NextResponse.json({ error: "Only photo uploads from your gallery are supported." }, { status: 400 });
+      }
+      if (dataUrl.length > 2_500_000) {
+        return NextResponse.json({ error: "That photo is too large. Please choose a smaller one." }, { status: 413 });
+      }
+
+      const doc: TutorDocument = {
+        id: randomUUID(),
+        type,
+        name,
+        dataUrl,
+        uploadedAt: new Date().toISOString(),
+      };
+      const docStore = getDocumentStore();
+      const docs = docStore.get(auth.user.id) || [];
+      docs.push(doc);
+      docStore.set(auth.user.id, docs);
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const inserted = await typedSql`
+            INSERT INTO tutor_documents (user_id, doc_type, file_name, file_data)
+            VALUES (${auth.user.id}, ${type}, ${name}, ${dataUrl})
+            RETURNING id
+          `;
+          doc.id = (inserted[0] as Record<string, unknown>).id as string;
+        } catch (err) {
+          console.error("Neon document insert failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true, document: doc }, { status: 201 });
+    }
+
+    if (action === "remove_document") {
+      const auth = await getUserFromRequest(req, ["tutor"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const documentId = (body.documentId as string) || "";
+      if (!documentId) return NextResponse.json({ error: "documentId is required." }, { status: 400 });
+
+      const docStore = getDocumentStore();
+      const docs = docStore.get(auth.user.id) || [];
+      const idx = docs.findIndex((d) => d.id === documentId);
+      if (idx < 0) return NextResponse.json({ error: "Document not found." }, { status: 404 });
+      docs.splice(idx, 1);
+      docStore.set(auth.user.id, docs);
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          await typedSql`DELETE FROM tutor_documents WHERE id = ${documentId} AND user_id = ${auth.user.id}`;
+        } catch (err) {
+          console.error("Neon document delete failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "apply_verification") {
+      const auth = await getUserFromRequest(req, ["tutor"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const docStore = getDocumentStore();
+      let docs = docStore.get(auth.user.id) || [];
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT id, doc_type, file_name, file_data, created_at FROM tutor_documents WHERE user_id = ${auth.user.id} ORDER BY created_at
+          `;
+          if (rows.length) {
+            docs = rows.map((r) => ({
+              id: String(r.id),
+              type: String(r.doc_type),
+              name: String(r.file_name),
+              dataUrl: String(r.file_data),
+              uploadedAt: new Date(String(r.created_at)).toISOString(),
+            }));
+            docStore.set(auth.user.id, docs);
+          }
+        } catch (err) {
+          console.error("Neon document read failed:", err);
+        }
+      }
+
+      // A valid application needs a government-issued ID AND at least one
+      // academic credential, both chosen from the compulsory type dropdown.
+      const hasId = docs.some((d) => d.type === "Government-issued ID");
+      const hasCredential = docs.some((d) => d.type === "Academic credential");
+      if (!hasId || !hasCredential) {
+        return NextResponse.json(
+          { error: "Please upload at least one government-issued ID and one academic credential before applying." },
+          { status: 400 }
+        );
+      }
+
+      const verifStore = getVerificationStore();
+      const existing = verifStore.find((v) => v.userId === auth.user.id);
+      if (existing?.status === "pending") {
+        return NextResponse.json({ error: "Your application is already awaiting admin review." }, { status: 409 });
+      }
+      if (existing?.status === "approved") {
+        return NextResponse.json({ error: "Your credentials have already been approved." }, { status: 409 });
+      }
+      const appliedAt = new Date().toISOString();
+      const record: TutorVerification = existing ?? { userId: auth.user.id, status: "pending", appliedAt };
+      if (existing) {
+        existing.status = "pending";
+        existing.appliedAt = appliedAt;
+        existing.reviewedAt = undefined;
+      } else {
+        verifStore.push(record);
+      }
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          await typedSql`
+            INSERT INTO tutor_verifications (user_id, status, applied_at)
+            VALUES (${auth.user.id}, 'pending', NOW())
+            ON CONFLICT (user_id) DO UPDATE SET status = 'pending', applied_at = NOW(), reviewed_at = NULL
+          `;
+        } catch (err) {
+          console.error("Neon verification upsert failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true, verification: record });
+    }
+
+    if (action === "review_verification") {
+      const auth = await getUserFromRequest(req, ["admin"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const userId = (body.userId as string) || "";
+      const decision = (body.decision as string) || "";
+      if (!userId) return NextResponse.json({ error: "userId is required." }, { status: 400 });
+      if (decision !== "approved" && decision !== "declined") {
+        return NextResponse.json({ error: "decision must be 'approved' or 'declined'." }, { status: 400 });
+      }
+
+      const verifStore = getVerificationStore();
+      let record = verifStore.find((v) => v.userId === userId);
+      if (!record) {
+        record = { userId, status: "pending", appliedAt: new Date().toISOString() };
+        verifStore.push(record);
+      }
+      record.status = decision;
+      record.reviewedAt = new Date().toISOString();
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          await typedSql`
+            INSERT INTO tutor_verifications (user_id, status, applied_at, reviewed_at)
+            VALUES (${userId}, ${decision}, NOW(), NOW())
+            ON CONFLICT (user_id) DO UPDATE SET status = ${decision}, reviewed_at = NOW()
+          `;
+          // Keep tutor_profiles in sync (schema uses 'rejected' for declined).
+          const profileStatus = decision === "approved" ? "approved" : "rejected";
+          await typedSql`
+            UPDATE tutor_profiles SET verification_status = ${profileStatus}, is_verified = ${decision === "approved"}
+            WHERE user_id = ${userId}
+          `;
+        } catch (err) {
+          console.error("Neon verification review failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true, verification: record });
+    }
+
+    if (action === "verification_applications") {
+      const auth = await getUserFromRequest(req, ["admin"]);
+      if (auth instanceof NextResponse) return auth;
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT tv.user_id, tv.status, tv.applied_at, tv.reviewed_at, u.full_name, u.email
+            FROM tutor_verifications tv
+            JOIN users u ON u.id = tv.user_id
+            ORDER BY tv.applied_at DESC
+            LIMIT 100
+          `;
+          const docRows = await typedSql`
+            SELECT id, user_id, doc_type, file_name, file_data FROM tutor_documents ORDER BY created_at
+          `;
+          const docsByUser = new Map<string, TutorDocument[]>();
+          for (const d of docRows) {
+            const uid = String(d.user_id);
+            const list = docsByUser.get(uid) || [];
+            list.push({
+              id: String(d.id),
+              type: String(d.doc_type),
+              name: String(d.file_name),
+              dataUrl: String(d.file_data),
+              uploadedAt: "",
+            });
+            docsByUser.set(uid, list);
+          }
+          return NextResponse.json({
+            source: "neon",
+            applications: rows.map((r) => ({
+              userId: String(r.user_id),
+              fullName: String(r.full_name),
+              email: String(r.email),
+              status: r.status,
+              appliedAt: new Date(String(r.applied_at)).toISOString(),
+              reviewedAt: r.reviewed_at ? new Date(String(r.reviewed_at)).toISOString() : null,
+              documents: docsByUser.get(String(r.user_id)) || [],
+            })),
+          });
+        } catch (err) {
+          console.error("Neon verification applications failed:", err);
+        }
+      }
+
+      const docStore = getDocumentStore();
+      const userStore = getUserStore();
+      const applications = getVerificationStore().map((v) => {
+        const u = Array.from(userStore.values()).find((x) => x.id === v.userId);
+        return {
+          userId: v.userId,
+          fullName: u?.fullName || "Tutor",
+          email: u?.email || "",
+          status: v.status,
+          appliedAt: v.appliedAt,
+          reviewedAt: v.reviewedAt ?? null,
+          documents: docStore.get(v.userId) || [],
+        };
+      });
+      return NextResponse.json({ source: "mock", applications });
+    }
+
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (err) {
     console.error("Auth error:", err);
-    return NextResponse.json({ error: "Authentication failed. Please try again." }, { status: 500 });
+    const message = err instanceof Error && err.message.includes("JWT_SECRET")
+      ? "Server is missing its JWT_SECRET configuration. Set it in the environment and try again."
+      : "Authentication failed. Please try again.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -427,7 +781,7 @@ export async function GET(req: NextRequest) {
 
   try {
     if (action === "children") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
       if (auth.user.role !== "parent") {
@@ -438,7 +792,7 @@ export async function GET(req: NextRequest) {
         try {
           const typedSql = sql as unknown as SqlTag;
           const rows = await typedSql`
-            SELECT id, child_name, child_age, educational_level FROM parent_profiles WHERE user_id = ${auth.user.id}
+            SELECT id, child_name, child_age, educational_level FROM parent_profiles WHERE user_id = ${auth.user.id} AND child_name IS NOT NULL
           `;
           return NextResponse.json({ source: "neon", children: rows });
         } catch (err) {
@@ -452,7 +806,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (action === "saved_tutors") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
       if (auth.user.role !== "student" && auth.user.role !== "parent") {
@@ -464,12 +818,62 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ source: "mock", savedTutors: saved });
     }
 
+    if (action === "list_chat_tutors") {
+      const auth = await getUserFromRequest(req);
+      if (auth instanceof NextResponse) return auth;
+
+      // Real registered tutor accounts only (never mock/demo data).
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT id, full_name FROM users WHERE role = 'tutor' AND id <> ${auth.user.id} ORDER BY full_name LIMIT 200
+          `;
+          return NextResponse.json({
+            source: "neon",
+            tutors: rows.map((r) => ({ id: r.id, fullName: r.full_name })),
+          });
+        } catch (err) {
+          console.error("Neon tutor list failed:", err);
+        }
+      }
+
+      const store = getUserStore();
+      const tutors = Array.from(store.values())
+        .filter((u) => u.role === "tutor" && u.id !== auth.user.id)
+        .map((u) => ({ id: u.id, fullName: u.fullName }));
+      return NextResponse.json({ source: "mock", tutors });
+    }
+
     if (action === "availability") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
       if (auth.user.role !== "tutor") {
         return NextResponse.json({ error: "Tutor access required." }, { status: 403 });
+      }
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT ta.id, ta.day_of_week, ta.start_time::text AS start, ta.end_time::text AS end
+            FROM tutor_availability ta
+            JOIN tutor_profiles tp ON tp.id = ta.tutor_id
+            WHERE tp.user_id = ${auth.user.id}
+            ORDER BY ta.day_of_week, ta.start_time
+          `;
+          const availability: AvailabilitySlot[] = rows.map((r) => ({
+            id: r.id as string,
+            tutorId: auth.user.id,
+            day: (INDEX_TO_DAY[Number(r.day_of_week)] ?? "Mon") as AvailabilitySlot["day"],
+            start: String(r.start).slice(0, 5),
+            end: String(r.end).slice(0, 5),
+          }));
+          return NextResponse.json({ source: "neon", availability });
+        } catch (err) {
+          console.error("Neon availability query failed:", err);
+        }
       }
 
       const availStore = getAvailabilityStore();
@@ -495,7 +899,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     if (action === "add_child") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
       if (auth.user.role !== "parent") {
         return NextResponse.json({ error: "Parent access required." }, { status: 403 });
@@ -520,10 +924,12 @@ export async function PUT(req: NextRequest) {
       if (hasDatabase) {
         try {
           const typedSql = sql as unknown as SqlTag;
-          await typedSql`
+          const inserted = await typedSql`
             INSERT INTO parent_profiles (user_id, child_name, child_age, educational_level, terms_agreed_at)
             VALUES (${auth.user.id}, ${child.name}, ${child.age}, ${child.educationLevel}, NOW())
+            RETURNING id
           `;
+          child.id = (inserted[0] as Record<string, unknown>).id as string;
         } catch (err) {
           console.error("Neon child insert failed:", err);
         }
@@ -533,7 +939,7 @@ export async function PUT(req: NextRequest) {
     }
 
     if (action === "update_child") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
       if (auth.user.role !== "parent") {
         return NextResponse.json({ error: "Parent access required." }, { status: 403 });
@@ -554,7 +960,7 @@ export async function PUT(req: NextRequest) {
           const typedSql = sql as unknown as SqlTag;
           await typedSql`
             UPDATE parent_profiles SET child_name = ${children[idx].name}, child_age = ${children[idx].age}, educational_level = ${children[idx].educationLevel}
-            WHERE user_id = ${auth.user.id}
+            WHERE user_id = ${auth.user.id} AND id = ${childId}
           `;
         } catch (err) {
           console.error("Neon child update failed:", err);
@@ -565,7 +971,7 @@ export async function PUT(req: NextRequest) {
     }
 
     if (action === "save_tutor") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
       const tutorId = (body.tutorId as string) || "";
@@ -589,7 +995,7 @@ export async function PUT(req: NextRequest) {
     }
 
     if (action === "remove_tutor") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
       const tutorId = (body.tutorId as string) || "";
@@ -600,7 +1006,7 @@ export async function PUT(req: NextRequest) {
     }
 
     if (action === "add_availability") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
       if (auth.user.role !== "tutor") {
         return NextResponse.json({ error: "Tutor access required." }, { status: 403 });
@@ -614,6 +1020,7 @@ export async function PUT(req: NextRequest) {
         end: (body.end as string) || "",
       };
       if (!slot.start || !slot.end) return NextResponse.json({ error: "Start and end times are required." }, { status: 400 });
+      if (slot.end <= slot.start) return NextResponse.json({ error: "End time must be after start time." }, { status: 400 });
 
       const availStore = getAvailabilityStore();
       const exists = availStore.find((a) => a.tutorId === auth.user.id && a.day === slot.day && a.start === slot.start);
@@ -622,11 +1029,28 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ success: true, slot: exists });
       }
       availStore.push(slot);
+
+      if (hasDatabase) {
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const profileRows = await typedSql`SELECT id FROM tutor_profiles WHERE user_id = ${auth.user.id} LIMIT 1`;
+          const profileId = (profileRows[0] as Record<string, unknown> | undefined)?.id as string | undefined;
+          if (profileId) {
+            await typedSql`
+              INSERT INTO tutor_availability (tutor_id, day_of_week, start_time, end_time)
+              VALUES (${profileId}, ${DAY_TO_INDEX[slot.day] ?? 0}, ${slot.start}, ${slot.end})
+            `;
+          }
+        } catch (err) {
+          console.error("Neon availability insert failed:", err);
+        }
+      }
+
       return NextResponse.json({ success: true, slot }, { status: 201 });
     }
 
     if (action === "delete_availability") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
       if (auth.user.role !== "tutor") {
         return NextResponse.json({ error: "Tutor access required." }, { status: 403 });
@@ -653,7 +1077,7 @@ export async function PUT(req: NextRequest) {
           if (slotId) {
             await typedSql`DELETE FROM tutor_availability WHERE id = ${slotId}`;
           } else {
-            await typedSql`DELETE FROM tutor_availability WHERE tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${auth.user.id}) AND day_of_week = ${day} AND start_time = ${start}`;
+            await typedSql`DELETE FROM tutor_availability WHERE tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${auth.user.id}) AND day_of_week = ${DAY_TO_INDEX[day] ?? -1} AND start_time = ${start}`;
           }
         } catch (err) {
           console.error("Neon availability delete failed:", err);
@@ -682,7 +1106,7 @@ export async function DELETE(req: NextRequest) {
 
   try {
     if (action === "delete_child") {
-      const auth = getUserFromRequest(req);
+      const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
       if (auth.user.role !== "parent") {
         return NextResponse.json({ error: "Parent access required." }, { status: 403 });

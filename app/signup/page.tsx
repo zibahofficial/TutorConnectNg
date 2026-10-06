@@ -3,7 +3,9 @@
 import { Suspense, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Carlito } from "next/font/google";
 import { useRouter, useSearchParams } from "next/navigation";
+import LegalModal, { LegalLink, type LegalDoc } from "@/components/LegalModal";
 import {
   Briefcase,
   Camera,
@@ -21,6 +23,21 @@ import {
   X,
 } from "lucide-react";
 import type { UserRole } from "@/lib/types";
+import { TUTOR_HEADLINES, TUTOR_STATES, QUALIFICATIONS, TEACHING_MODES } from "@/lib/tutor-options";
+
+/**
+ * Calibri-look font for the signup page. Local `Calibri` is preferred where
+ * installed (e.g. Windows); the Carlito webfont — metric-compatible with
+ * Calibri — is the fallback for devices without it (Android, iOS, macOS,
+ * Linux). Exposed as the `--font-signup-calibri` CSS variable, consumed by
+ * the `.font-calibri` class in globals.css.
+ */
+const calibriFont = Carlito({
+  variable: "--font-signup-calibri",
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  display: "swap",
+});
 
 const NIGERIAN_STATES = [
   "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
@@ -30,14 +47,6 @@ const NIGERIAN_STATES = [
   "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara",
 ];
 
-const TUTOR_STATES = [
-  "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
-  "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu",
-  "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi",
-  "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo",
-  "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara",
-  "Federal Capital Territory (Abuja)",
-];
 
 const EDUCATION_LEVELS = [
   "Nursery / Early years",
@@ -54,24 +63,6 @@ const EDUCATION_LEVELS = [
   "Parent booking for a child",
 ];
 
-const TUTOR_HEADLINES = [
-  "Mathematics & Further Mathematics tutor (WAEC, NECO, JAMB)",
-  "English & Literature tutor (WAEC, NECO, JAMB)",
-  "Physics, Chemistry & Biology tutor (senior secondary)",
-  "Chemistry & Biology tutor for senior secondary students",
-  "Primary school tutor (all subjects, Grades 1-6)",
-  "ICT, Computer Science & Coding tutor",
-  "Economics, Government & Commerce tutor",
-  "Accounting & Business Studies tutor",
-  "Geography & Environmental Science tutor",
-  "History & Social Studies tutor",
-  "Music, Piano & Voice tutor",
-  "French & Foreign Languages tutor",
-  "JAMB / UTME & Post-UTME coaching specialist",
-  "IGCSE, SAT & IELTS preparation specialist",
-  "Special-needs & home-schooling tutor",
-  "University admission & essay-writing coach",
-];
 
 const SUBJECT_OPTIONS = [
   "📑 Accounting", "🌱 Agricultural Science", "🧬 Biology", "💼 Business Studies",
@@ -85,23 +76,55 @@ const SUBJECT_OPTIONS = [
   "🗣️ Yoruba",
 ];
 
-const QUALIFICATIONS = [
-  "B.Sc. / B.A. / B.Eng. (Bachelor's degree)",
-  "B.Sc. / B.A. (First Class Honours)",
-  "Master's degree (M.Sc. / M.A. / M.Eng.)",
-  "Doctorate (PhD / EdD)",
-  "MBBS / BDS (Medical degree)",
-  "NCE (Nigeria Certificate in Education)",
-  "PGDE / Postgraduate Diploma in Education",
-  "HND / Diploma",
-  "Professional certification (ICAN, CIBN, CISCO, TRCN)",
-  "WAEC / NECO certificate + verifiable teaching experience",
-];
 
-const TEACHING_MODES = ["Online & in person", "Online only", "In person only"];
 
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const ALLOWED_PHOTO_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/**
+ * Terms/privacy consent checkbox shared by the student, tutor, and parent
+ * signup flows. The document links open the full Terms of Service / Privacy
+ * Policy in an in-page dialog (works even where new-tab popups are blocked),
+ * and stop click propagation so tapping a link never toggles the checkbox.
+ */
+function TermsConsent({
+  checked,
+  onChange,
+  onOpenDoc,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  onOpenDoc: (doc: LegalDoc) => void;
+}) {
+  const linkClass =
+    "font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700";
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-slate-600">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
+        />
+        <span>
+          I agree to the TutorConnect{" "}
+          <LegalLink doc="terms" onOpen={onOpenDoc} className={linkClass}>
+            Terms of Service
+          </LegalLink>{" "}
+          and{" "}
+          <LegalLink doc="privacy" onOpen={onOpenDoc} className={linkClass}>
+            Privacy Policy
+          </LegalLink>
+          , and confirm the information above is accurate.
+        </span>
+      </label>
+      <p className="mt-1.5 text-[11px] text-slate-400">
+        Tap the underlined documents to read them in full — your form progress is preserved.
+      </p>
+    </div>
+  );
+}
 
 function SignupForm() {
   const router = useRouter();
@@ -143,6 +166,7 @@ const [learningMode, setLearningMode] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
 
   const isStudentFlow = role === "student";
 const isTutorFlow = role === "tutor";
@@ -246,7 +270,6 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
     if (password !== confirmPassword) return "Passwords do not match.";
   if (!city.trim()) return "Please tell us your city.";
   if (!stateValue) return "Please select your state.";
-  if (!childName.trim()) return "Please enter the child's name.";
   if (!childAge) return "Please enter the child's age.";
   if (!educationLevel) return "Please select an educational level.";
   if (!tutorBudget) return "Please enter your tutor budget.";
@@ -310,6 +333,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 bio,
                 yearsExperience,
                 ratePerSession,
+                hourlyRate: ratePerSession ? Number(ratePerSession) : undefined,
                 teachingMode,
                 subjects: selectedSubjects,
                 qualification: qualification || undefined,
@@ -320,7 +344,6 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
       phone,
       city,
       state: stateValue,
-      childName,
       childAge,
       educationLevel,
       tutorBudget,
@@ -343,7 +366,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-navy-50/60 to-white px-4 py-12">
+    <main className={`${calibriFont.variable} font-calibri flex min-h-screen items-center justify-center bg-gradient-to-b from-navy-50/60 to-white px-4 py-12`}>
       <div
         className={`w-full rounded-3xl border border-slate-200 bg-white p-8 shadow-soft transition-all ${
           isTutorFlow || isParentFlow ? "max-w-2xl" : "max-w-md"
@@ -358,6 +381,27 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
 
         <h1 className="text-center font-display text-2xl font-extrabold text-slate-900">Create your account</h1>
         <p className="mt-1 text-center text-sm text-slate-500">Join thousands of Nigerian learners &amp; tutors</p>
+
+        {/* Read-first notice — visible before any form input, for every role */}
+        <p className="mt-4 rounded-xl bg-navy-50 px-4 py-2.5 text-center text-xs leading-relaxed text-navy-800">
+          Before you continue, please read our{" "}
+          <LegalLink
+            doc="terms"
+            onOpen={setLegalDoc}
+            className="font-bold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Terms of Service
+          </LegalLink>{" "}
+          and{" "}
+          <LegalLink
+            doc="privacy"
+            onOpen={setLegalDoc}
+            className="font-bold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Privacy Policy
+          </LegalLink>
+          .
+        </p>
 
         <div className="mt-6 grid grid-cols-3 gap-2">
           {(["student", "parent", "tutor"] as UserRole[]).map((r) => (
@@ -422,7 +466,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-transparent text-sm focus:outline-none"
-                    placeholder="you@example.com"
+                    placeholder="you@gmail.com"
                   />
                 </div>
               </div>
@@ -553,15 +597,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 </div>
               )}
 
-              <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms}
-                  onChange={(e) => setAgreeTerms(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
-                />
-                I agree to the TutorConnect terms of service and privacy policy, and confirm the information above is accurate.
-              </label>
+              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} onOpenDoc={setLegalDoc} />
             </>
           )}
 
@@ -612,7 +648,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-transparent text-sm focus:outline-none"
-                    placeholder="you@example.com"
+                    placeholder="you@gmail.com"
                   />
                 </div>
               </div>
@@ -906,15 +942,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 </select>
               </div>
 
-              <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms}
-                  onChange={(e) => setAgreeTerms(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
-                />
-                I agree to the TutorConnect terms of service and privacy policy, and confirm the information above is accurate.
-              </label>
+              <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} onOpenDoc={setLegalDoc} />
             </>
           )}
 {isParentFlow && (
@@ -966,7 +994,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="w-full bg-transparent text-sm focus:outline-none"
-          placeholder="you@example.com"
+          placeholder="you@gmail.com"
         />
       </div>
     </div>
@@ -1070,35 +1098,23 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
         About the learner
       </p>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-            Child&apos;s name <span className="text-rose-500">*</span>
-          </label>
-          <input
-            required
-            value={childName}
-            onChange={(e) => setChildName(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
-            placeholder="e.g. Chinedu"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-            Child&apos;s age <span className="text-rose-500">*</span>
-          </label>
-          <input
-            required
-            type="number"
-            min={1}
-            max={100}
-            value={childAge}
-            onChange={(e) => setChildAge(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
-            placeholder="e.g. 12"
-          />
-        </div>
+      <div>
+        <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+          Child&apos;s age <span className="text-rose-500">*</span>
+        </label>
+        <input
+          required
+          type="number"
+          min={1}
+          max={100}
+          value={childAge}
+          onChange={(e) => setChildAge(e.target.value)}
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+          placeholder="e.g. 12"
+        />
+        <p className="mt-1.5 text-xs text-slate-400">
+          You can add and manage your child&apos;s details anytime from your dashboard.
+        </p>
       </div>
     </div>
 
@@ -1165,15 +1181,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
       </div>
     </div>
 
-    <label className="flex items-start gap-2.5 text-xs leading-relaxed text-slate-500">
-      <input
-        type="checkbox"
-        checked={agreeTerms}
-        onChange={(e) => setAgreeTerms(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 accent-navy-600"
-      />
-      I agree to the TutorConnect terms of service and privacy policy, and confirm the information above is accurate.
-    </label>
+    <TermsConsent checked={agreeTerms} onChange={setAgreeTerms} onOpenDoc={setLegalDoc} />
   </>
 )}
                
@@ -1193,6 +1201,7 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
           </Link>
         </p>
       </div>
+      <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
     </main>
   );
 }

@@ -3,14 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { GraduationCap, Loader2, Lock, Mail } from "lucide-react";
+import { Eye, EyeOff, GraduationCap, Loader2, Lock, Mail } from "lucide-react";
+import LegalModal, { LegalLink, type LegalDoc } from "@/components/LegalModal";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,12 +72,20 @@ export default function LoginPage() {
               <Lock size={16} className="text-slate-400" />
               <input
                 required
-                type="password"
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-transparent text-sm focus:outline-none"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                className="shrink-0 text-slate-400 hover:text-slate-600"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
           </div>
 
@@ -91,7 +102,29 @@ export default function LoginPage() {
             Sign up for free
           </Link>
         </p>
+
+        <p className="mt-4 border-t border-slate-100 pt-4 text-center text-xs leading-relaxed text-slate-400">
+          By logging in, you continue to accept our{" "}
+          <LegalLink
+            doc="terms"
+            onOpen={setLegalDoc}
+            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Terms of Service
+          </LegalLink>{" "}
+          and{" "}
+          <LegalLink
+            doc="privacy"
+            onOpen={setLegalDoc}
+            className="font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 transition-colors hover:text-navy-900 hover:decoration-navy-700"
+          >
+            Privacy Policy
+          </LegalLink>
+          .
+        </p>
       </div>
+
+      <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
     </main>
   );
 }

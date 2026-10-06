@@ -144,7 +144,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### Seeding demo tutors (optional)
 
-`db/schema.sql` seeds a single admin user. To populate realistic tutor
+`db/schema.sql` does not seed any accounts. To populate realistic tutor
 profiles for demos, insert rows into `users` (role = `'tutor'`) and
 `tutor_profiles` / `tutor_subjects` / `tutor_availability` using the shapes
 documented in the schema — or adapt the objects in `lib/mock-data.ts` into
@@ -194,6 +194,11 @@ which:
 - Falls back to an in-memory `Map` (`lib/auth-store.ts`) otherwise, so you can
   sign up and log in immediately in a fresh deployment/demo without a
   database — note this in-memory store resets on cold start/redeploy.
+- Admin access (demo mode only): set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in
+  `.env.local` — the in-memory store seeds that account automatically. No
+  credentials are hardcoded in the repository. With a database connected,
+  create the admin row directly in `users` (see the note at the bottom of
+  `db/schema.sql`).
 - Dashboards (`/dashboard/student`, `/dashboard/tutor`, `/dashboard/admin`)
   are intentionally left **unprotected by middleware** in this build so
   reviewers/stakeholders can access all three role views directly from the

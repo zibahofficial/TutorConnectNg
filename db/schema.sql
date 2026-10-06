@@ -89,11 +89,11 @@ CREATE INDEX IF NOT EXISTS idx_tutor_subjects_name ON tutor_subjects(subject_nam
 -- 4. TUTOR AVAILABILITY
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS tutor_availability (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tutor_id      UUID NOT NULL REFERENCES tutor_profiles(id) ON DELETE CASCADE,
-  day_of_week   SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Sunday ... 6=Saturday
-  start_time    TIME NOT NULL,
-  end_time      TIME NOT NULL,
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tutor_id        UUID NOT NULL REFERENCES tutor_profiles(id) ON DELETE CASCADE,
+  day_of_week     SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Monday ... 6=Saturday (matches DAY_TO_INDEX in lib/auth-store.ts)
+  start_time      TIME NOT NULL,
+  end_time        TIME NOT NULL,
   CONSTRAINT valid_time_range CHECK (end_time > start_time)
 );
 
@@ -104,7 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_tutor_availability_tutor ON tutor_availability(tu
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS bookings (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  student_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  student_id      UUID REFERENCES users(id) ON DELETE CASCADE, -- NULL = guest booking (not logged in)
   tutor_id        UUID NOT NULL REFERENCES tutor_profiles(id) ON DELETE CASCADE,
   subject_id      UUID REFERENCES tutor_subjects(id) ON DELETE SET NULL,
   grade_level     VARCHAR(50),
@@ -129,16 +129,36 @@ CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(scheduled_date);
 -- 6. REVIEWS
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS reviews (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_id  UUID NOT NULL UNIQUE REFERENCES bookings(id) ON DELETE CASCADE,
-  student_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  tutor_id    UUID NOT NULL REFERENCES tutor_profiles(id) ON DELETE CASCADE,
-  rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
-  comment     TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id    UUID UNIQUE REFERENCES bookings(id) ON DELETE CASCADE, -- NULL = free-form review (not tied to a booking)
+  student_id    UUID REFERENCES users(id) ON DELETE CASCADE,           -- NULL = guest review
+  tutor_id      UUID NOT NULL REFERENCES tutor_profiles(id) ON DELETE CASCADE,
+  student_name  VARCHAR(150), -- display name (kept even if the user account is later deleted)
+  rating        SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment       TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_reviews_tutor ON reviews(tutor_id);
+
+-- -------------------------------------------------------------------------
+-- 7. PRIVATE CHAT MESSAGES (student ↔ tutor)
+-- -------------------------------------------------------------------------
+-- Party keys are opaque strings: a users.id, a mock tutor id (e.g. "t1") in
+-- demo mode, or a tutor_profiles.id. Threads are strictly the two parties,
+-- enforced by the /api/messages route (JWT-authenticated).
+CREATE TABLE IF NOT EXISTS messages (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_key     VARCHAR(255) NOT NULL,
+  sender_name    VARCHAR(150) NOT NULL,
+  recipient_key  VARCHAR(255) NOT NULL,
+  recipient_name VARCHAR(150) NOT NULL,
+  body           TEXT NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(sender_key, recipient_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_participant ON messages(recipient_key, created_at);
 
 -- -------------------------------------------------------------------------
 -- TRIGGERS: keep tutor_profiles.rating_avg / total_reviews in sync
@@ -180,9 +200,36 @@ BEFORE UPDATE ON bookings
 FOR EACH ROW EXECUTE FUNCTION fn_touch_updated_at();
 
 -- -------------------------------------------------------------------------
--- SEED DATA (light demo data for first-run experience)
+-- SEED DATA
 -- -------------------------------------------------------------------------
-INSERT INTO users (id, email, password_hash, full_name, role, phone, city, state, avatar_url)
-VALUES
-  ('11111111-1111-1111-1111-111111111111', 'admin@tutorconnect.ng', '$2a$10$abcdefghijklmnopqrstuv', 'TutorConnect Admin', 'admin', '+2348000000000', 'Lagos', 'Lagos', NULL)
-ON CONFLICT (email) DO NOTHING;
+-- No accounts are seeded by default (never commit real credentials here).
+-- To create an admin, either:
+--   1. Without a database: set ADMIN_EMAIL + ADMIN_PASSWORD env vars — the
+--      in-memory auth store seeds that account automatically (demo mode).
+--   2. With a database: insert one manually with a real bcrypt hash, e.g.
+--      INSERT INTO users (email, password_hash, full_name, role)
+--      VALUES ('you@gmail.com', '<bcrypt hash>', 'Your Name', 'admin');
+--      (generate the hash with: node -e "console.log(require('bcryptjs').hashSync('YOUR_PASSWORD', 10))")
+
+-- -------------------------------------------------------------------------
+-- TUTOR CREDENTIAL DOCUMENTS & VERIFICATION APPLICATIONS
+-- -------------------------------------------------------------------------
+-- Photos of credentials uploaded by tutors from their gallery, and their
+-- applications for admin verification.
+CREATE TABLE IF NOT EXISTS tutor_documents (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  doc_type    VARCHAR(60) NOT NULL,
+  file_name   VARCHAR(255) NOT NULL,
+  file_data   TEXT NOT NULL, -- base64 data URL of the (client-compressed) image
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tutor_documents_user ON tutor_documents(user_id);
+
+CREATE TABLE IF NOT EXISTS tutor_verifications (
+  user_id     UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  status      VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending | approved | declined
+  applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ
+);
