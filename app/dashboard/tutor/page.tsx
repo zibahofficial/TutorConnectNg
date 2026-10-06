@@ -42,6 +42,16 @@ interface AuthUser {
   role: string;
 }
 
+/** Headers for /api/bookings calls — attaches the logged-in user's token. */
+function bookingAuthHeaders() {
+  if (typeof window === "undefined") return { "Content-Type": "application/json" };
+  const token = localStorage.getItem("tutorconnect_token") || "";
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function TutorDashboard() {
   const router = useRouter();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
@@ -101,7 +111,7 @@ export default function TutorDashboard() {
   }
 
   useEffect(() => {
-    fetch(`/api/bookings?tutorId=${DEMO_TUTOR_ID}`)
+    fetch(`/api/bookings?tutorId=${DEMO_TUTOR_ID}`, { headers: bookingAuthHeaders() })
       .then((res) => res.json())
       .then((data) => setBookings(data.bookings ?? []))
       .finally(() => setLoading(false));
@@ -377,7 +387,7 @@ export default function TutorDashboard() {
   try {
     await fetch("/api/bookings", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: bookingAuthHeaders(),
       body: JSON.stringify({ id, status, meetingLink }),
     });
   } catch {

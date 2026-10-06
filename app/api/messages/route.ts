@@ -156,7 +156,9 @@ export async function GET(req: NextRequest) {
         }
       }
       const store = getMessageStore();
-      return NextResponse.json({ source: "mock", conversations: collect(store) });
+      // Only ever expose the requester's own threads — never other users' chats.
+      const mine = store.filter((m) => m.senderKey === myKey || m.recipientKey === myKey);
+      return NextResponse.json({ source: "mock", conversations: collect(mine) });
     }
   } catch (err) {
     console.error("Messages GET error:", err);

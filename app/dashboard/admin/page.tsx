@@ -31,6 +31,16 @@ function formatNaira(amount: number) {
     maximumFractionDigits: 0,
   }).format(amount);
 }
+/** Headers for /api/bookings calls — attaches the logged-in user's token. */
+function bookingAuthHeaders() {
+  if (typeof window === "undefined") return { "Content-Type": "application/json" };
+  const token = localStorage.getItem("tutorconnect_token") || "";
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
 
@@ -112,7 +122,7 @@ export default function AdminDashboard() {
   }, [authChecked]);
 
   useEffect(() => {
-    fetch("/api/bookings")
+    fetch("/api/bookings", { headers: bookingAuthHeaders() })
       .then((res) => res.json())
       .then((data) => setBookings(data.bookings ?? []))
       .finally(() => setLoading(false));

@@ -72,6 +72,16 @@ interface StoredUser {
   role?: string;
 }
 
+/** Headers for /api/bookings calls — attaches the logged-in user's token. */
+function bookingAuthHeaders() {
+  if (typeof window === "undefined") return { "Content-Type": "application/json" };
+  const token = localStorage.getItem("tutorconnect_token") || "";
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function StudentDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -153,7 +163,7 @@ export default function StudentDashboard() {
       })
       .catch(() => {});
 
-    fetch(`/api/bookings${user?.id ? `?studentId=${encodeURIComponent(user.id)}` : ""}`)
+    fetch(`/api/bookings${user?.id ? `?studentId=${encodeURIComponent(user.id)}` : ""}`, { headers: bookingAuthHeaders() })
       .then((res) => res.json())
       .then((data) => {
         const all = data.bookings ?? [];
@@ -248,7 +258,7 @@ export default function StudentDashboard() {
     try {
       await fetch("/api/bookings", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: bookingAuthHeaders(),
         body: JSON.stringify({ id: target.id, status: "cancelled" }),
       });
     } catch {
@@ -266,7 +276,7 @@ export default function StudentDashboard() {
     try {
       const res = await fetch("/api/bookings", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: bookingAuthHeaders(),
         body: JSON.stringify({ id: target.id, edit: { ...form } }),
       });
       if (res.ok) {

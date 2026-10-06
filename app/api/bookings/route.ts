@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
 import { BOOKINGS } from "@/lib/mock-data";
+import { verifyToken } from "@/lib/auth-store";
 import type { Booking } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -19,11 +20,29 @@ function getBookingStore(): Booking[] {
   return global.__tutorconnect_bookings__;
 }
 
+/**
+ * Bookings can only be read/changed by authenticated users. POST stays open
+ * so guests can request a booking from the public tutor listing (the modal
+ * labels them "Guest Student"); everything else requires a valid token.
+ */
+function requireAuth(req: NextRequest): { id: string; email: string; role: string } | null {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace("Bearer ", "") || req.nextUrl.searchParams.get("token") || "";
+  if (!token) return null;
+  return verifyToken(token);
+}
+
 export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
   const params = req.nextUrl.searchParams;
   const tutorId = params.get("tutorId");
   const status = params.get("status");
-  const studentId = params.get("studentId");
+  // Note: the studentId param is intentionally ignored for non-admins —
+  // bookings are always scoped server-side to the authenticated user so the
+  // param can never be used to read someone else's bookings.
 
   if (hasDatabase) {
     try {
@@ -50,19 +69,14 @@ export async function GET(req: NextRequest) {
           SELECT b.*, u.full_name AS student_name
           FROM bookings b LEFT JOIN users u ON u.id = b.student_id
           WHERE b.status = ${status}
-          ORDER BY b.created_at DESC LIMIT 100
-        `;
-      } else if (studentId) {
-        rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name
-          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
-          WHERE b.student_id = ${studentId}
+            AND (${auth.role === "admin"} OR b.student_id = ${auth.id} OR b.student_id IS NULL)
           ORDER BY b.created_at DESC LIMIT 100
         `;
       } else {
         rows = await typedSql`
           SELECT b.*, u.full_name AS student_name
           FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          WHERE ${auth.role === "admin"} OR b.student_id = ${auth.id} OR b.student_id IS NULL
           ORDER BY b.created_at DESC LIMIT 100
         `;
       }
@@ -75,7 +89,15 @@ export async function GET(req: NextRequest) {
   }
 
   let results = getBookingStore();
-  if (tutorId) results = results.filter((b) => b.tutorId === tutorId);
+  if (tutorId) {
+    // Tutor view: the tutor dashboard requests a specific tutor's bookings.
+    results = results.filter((b) => b.tutorId === tutorId);
+  } else if (auth.role !== "admin") {
+    // Everyone else only ever receives their own bookings (plus the shared
+    // demo/unattributed ones so demo-mode dashboards stay populated) — the
+    // studentId query param can never be used to read someone else's data.
+    results = results.filter((b) => !b.studentId || b.studentId === "demo_student" || b.studentId === auth.id);
+  }
   if (status) results = results.filter((b) => b.status === status);
 
   return NextResponse.json({ source: "mock", bookings: results });
@@ -143,6 +165,10 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -246,6 +272,10 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
   let body: Record<string, unknown>;
   try {
     body = await req.json();

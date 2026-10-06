@@ -82,6 +82,16 @@ const GRADE_LEVELS = [
   "Adult Learner",
 ];
 
+/** Headers for /api/bookings calls — attaches the logged-in user's token. */
+function bookingAuthHeaders() {
+  if (typeof window === "undefined") return { "Content-Type": "application/json" };
+  const token = localStorage.getItem("tutorconnect_token") || "";
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function ParentDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -157,7 +167,7 @@ export default function ParentDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    fetch(`/api/bookings${user.id ? `?studentId=${encodeURIComponent(user.id)}` : ""}`)
+    fetch(`/api/bookings${user.id ? `?studentId=${encodeURIComponent(user.id)}` : ""}`, { headers: bookingAuthHeaders() })
       .then((res) => res.json())
       .then((data) => {
         const all: Booking[] = data.bookings ?? [];
@@ -331,7 +341,7 @@ export default function ParentDashboard() {
     try {
       await fetch("/api/bookings", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: bookingAuthHeaders(),
         body: JSON.stringify({ id: target.id, status: "cancelled" }),
       });
     } catch {
@@ -349,7 +359,7 @@ export default function ParentDashboard() {
     try {
       await fetch("/api/bookings", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: bookingAuthHeaders(),
         body: JSON.stringify({ id: target.id }),
       });
     } catch {
@@ -367,7 +377,7 @@ export default function ParentDashboard() {
     try {
       const res = await fetch("/api/bookings", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: bookingAuthHeaders(),
         body: JSON.stringify({ id: target.id, edit: { ...form } }),
       });
       if (res.ok) {
