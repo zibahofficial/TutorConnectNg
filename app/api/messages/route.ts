@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
 import { getUserStore, verifyToken } from "@/lib/auth-store";
 import type { ChatMessage, ChatConversation } from "@/lib/types";
@@ -8,22 +7,17 @@ export const runtime = "nodejs";
 
 type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>;
 
-declare global {
-  var __tutorconnect_messages__: ChatMessage[] | undefined;
-}
-
-function getMessageStore(): ChatMessage[] {
-  if (!global.__tutorconnect_messages__) {
-    global.__tutorconnect_messages__ = [];
-  }
-  return global.__tutorconnect_messages__;
-}
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface AuthUser {
   id: string;
   email: string;
+  role: string;
+  fullName: string;
+}
+
+interface ChatUser {
+  id: string;
   role: string;
   fullName: string;
 }
@@ -73,6 +67,26 @@ async function resolveName(key: string): Promise<string | null> {
   return null;
 }
 
+async function resolveChatUser(key: string): Promise<ChatUser | null> {
+  if (!key) return null;
+  if (hasDatabase) {
+    if (!UUID_RE.test(key)) return null;
+    const typedSql = sql as unknown as SqlTag;
+    const rows = await typedSql`
+      SELECT id, role, full_name
+      FROM users
+      WHERE id = ${key} AND role IN ('student', 'parent', 'tutor', 'admin')
+      LIMIT 1
+    `;
+    const row = rows[0];
+    return row
+      ? { id: String(row.id), role: String(row.role), fullName: String(row.full_name || "User") }
+      : null;
+  }
+  const user = Array.from(getUserStore().values()).find((candidate) => candidate.id === key);
+  return user ? { id: user.id, role: user.role, fullName: user.fullName } : null;
+}
+
 function rowToMessage(r: Record<string, unknown>): ChatMessage {
   const createdAt = r.created_at instanceof Date ? (r.created_at as Date).toISOString() : String(r.created_at ?? "");
   return {
@@ -90,40 +104,56 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const auth = getAuthUser(req);
   if (!auth) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  if (!hasDatabase) {
+    return NextResponse.json({ error: "Private messaging is temporarily unavailable." }, { status: 503 });
+  }
 
   // Every user chats strictly as their own account — no impersonation.
   const myKey = auth.id;
 
   const withKey = params.get("with");
   const wantConversations = params.get("conversations") === "1";
+  const wantContacts = params.get("contacts") === "1";
 
   try {
-    if (withKey) {
-      if (hasDatabase) {
-        try {
-          const typedSql = sql as unknown as SqlTag;
-          const rows = await typedSql`
-            SELECT id, sender_key, sender_name, recipient_key, recipient_name, body, created_at
-            FROM messages
-            WHERE (sender_key = ${myKey} AND recipient_key = ${withKey})
-               OR (sender_key = ${withKey} AND recipient_key = ${myKey})
-            ORDER BY created_at ASC
-            LIMIT 500
-          `;
-          return NextResponse.json({ source: "neon", messages: rows.map(rowToMessage) });
-        } catch (err) {
-          console.error("Neon messages query failed, falling back to in-memory store:", err);
-        }
+    if (wantContacts) {
+      try {
+        const typedSql = sql as unknown as SqlTag;
+        const rows = await typedSql`
+          SELECT id, full_name
+          FROM users
+          WHERE role IN ('student', 'parent', 'tutor', 'admin')
+            AND role <> ${auth.role}
+            AND id <> ${auth.id}
+          ORDER BY full_name
+          LIMIT 200
+        `;
+        return NextResponse.json({
+          source: "neon",
+          contacts: rows.map((row) => ({ id: row.id, fullName: row.full_name })),
+        });
+      } catch (err) {
+        console.error("Neon chat contacts query failed:", err);
+        return NextResponse.json({ error: "Could not load chat contacts." }, { status: 500 });
       }
-      const store = getMessageStore();
-      const messages = store
-        .filter(
-          (m) =>
-            (m.senderKey === myKey && m.recipientKey === withKey) ||
-            (m.senderKey === withKey && m.recipientKey === myKey)
-        )
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-      return NextResponse.json({ source: "mock", messages });
+    }
+
+    if (withKey) {
+      try {
+        const typedSql = sql as unknown as SqlTag;
+        const rows = await typedSql`
+          SELECT id, sender_key, sender_name, recipient_key, recipient_name, body, created_at
+          FROM messages
+          WHERE (sender_key = ${myKey} AND recipient_key = ${withKey})
+             OR (sender_key = ${withKey} AND recipient_key = ${myKey})
+          ORDER BY created_at ASC
+          LIMIT 500
+        `;
+        return NextResponse.json({ source: "neon", messages: rows.map(rowToMessage) });
+      } catch (err) {
+        console.error("Neon messages query failed:", err);
+        return NextResponse.json({ error: "Could not load messages." }, { status: 500 });
+      }
     }
 
     if (wantConversations) {
@@ -143,25 +173,20 @@ export async function GET(req: NextRequest) {
         }));
       };
 
-      if (hasDatabase) {
-        try {
-          const typedSql = sql as unknown as SqlTag;
-          const rows = await typedSql`
-            SELECT id, sender_key, sender_name, recipient_key, recipient_name, body, created_at
-            FROM messages
-            WHERE sender_key = ${myKey} OR recipient_key = ${myKey}
-            ORDER BY created_at DESC
-            LIMIT 500
-          `;
-          return NextResponse.json({ source: "neon", conversations: collect(rows.map(rowToMessage)) });
-        } catch (err) {
-          console.error("Neon conversations query failed, falling back to in-memory store:", err);
-        }
+      try {
+        const typedSql = sql as unknown as SqlTag;
+        const rows = await typedSql`
+          SELECT id, sender_key, sender_name, recipient_key, recipient_name, body, created_at
+          FROM messages
+          WHERE sender_key = ${myKey} OR recipient_key = ${myKey}
+          ORDER BY created_at DESC
+          LIMIT 500
+        `;
+        return NextResponse.json({ source: "neon", conversations: collect(rows.map(rowToMessage)) });
+      } catch (err) {
+        console.error("Neon conversations query failed:", err);
+        return NextResponse.json({ error: "Could not load conversations." }, { status: 500 });
       }
-      const store = getMessageStore();
-      // Only ever expose the requester's own threads — never other users' chats.
-      const mine = store.filter((m) => m.senderKey === myKey || m.recipientKey === myKey);
-      return NextResponse.json({ source: "mock", conversations: collect(mine) });
     }
   } catch (err) {
     console.error("Messages GET error:", err);
@@ -181,6 +206,9 @@ export async function POST(req: NextRequest) {
 
   const auth = getAuthUser(req);
   if (!auth) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  if (!hasDatabase) {
+    return NextResponse.json({ error: "Private messaging is temporarily unavailable." }, { status: 503 });
+  }
 
   const to = String(body.to || "").trim();
   const text = String(body.body || "").trim().slice(0, 2000);
@@ -191,34 +219,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Cannot message yourself." }, { status: 400 });
   }
 
-  const senderKey = auth.id;
-  const senderName = auth.fullName;
-  const recipientName = (await resolveName(to)) ?? "User";
-
-  const message: ChatMessage = {
-    id: randomUUID(),
-    senderKey,
-    senderName,
-    recipientKey: to,
-    recipientName,
-    body: text,
-    createdAt: new Date().toISOString(),
-  };
-
-  if (hasDatabase) {
-    try {
-      const typedSql = sql as unknown as SqlTag;
-      const inserted = await typedSql`
-        INSERT INTO messages (sender_key, sender_name, recipient_key, recipient_name, body)
-        VALUES (${senderKey}, ${senderName}, ${to}, ${recipientName}, ${text})
-        RETURNING id, sender_key, sender_name, recipient_key, recipient_name, body, created_at
-      `;
-      return NextResponse.json({ source: "neon", message: rowToMessage(inserted[0]) }, { status: 201 });
-    } catch (err) {
-      console.error("Neon message insert failed, falling back to in-memory store:", err);
-    }
+  let recipient: ChatUser | null;
+  try {
+    recipient = await resolveChatUser(to);
+  } catch (err) {
+    console.error("Chat recipient lookup failed:", err);
+    return NextResponse.json({ error: "Could not verify the chat recipient." }, { status: 500 });
+  }
+  if (!recipient || recipient.role === auth.role) {
+    return NextResponse.json({ error: "That user is not an available chat contact." }, { status: 403 });
   }
 
-  getMessageStore().push(message);
-  return NextResponse.json({ source: "mock", message }, { status: 201 });
+  const senderKey = auth.id;
+  const senderName = (await resolveName(auth.id)) ?? auth.fullName;
+  const recipientName = recipient.fullName;
+
+  try {
+    const typedSql = sql as unknown as SqlTag;
+    const inserted = await typedSql`
+      INSERT INTO messages (sender_key, sender_name, recipient_key, recipient_name, body)
+      VALUES (${senderKey}, ${senderName}, ${to}, ${recipientName}, ${text})
+      RETURNING id, sender_key, sender_name, recipient_key, recipient_name, body, created_at
+    `;
+    return NextResponse.json({ source: "neon", message: rowToMessage(inserted[0]) }, { status: 201 });
+  } catch (err) {
+    console.error("Neon message insert failed:", err);
+    return NextResponse.json({ error: "Message could not be saved." }, { status: 500 });
+  }
 }

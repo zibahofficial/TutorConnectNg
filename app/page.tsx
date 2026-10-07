@@ -7,6 +7,7 @@ import SubjectGrid from "@/components/SubjectGrid";
 import HowItWorks from "@/components/HowItWorks";
 import TutorCard from "@/components/TutorCard";
 import Testimonials from "@/components/Testimonials";
+import HomeReviewLink from "@/components/HomeReviewLink";
 import Footer from "@/components/Footer";
 import { fetchApprovedTutors, fetchPlatformStats, type PlatformStats } from "@/db/tutors";
 import type { Tutor } from "@/lib/types";
@@ -47,12 +48,15 @@ export default async function HomePage() {
                   Featured Verified Tutors
                 </h2>
               </div>
-              <Link
-                href="/tutors"
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-navy-700 hover:text-navy-900"
-              >
-                Browse all tutors <ArrowRight size={16} />
-              </Link>
+              <div className="flex flex-wrap items-center gap-3">
+                <HomeReviewLink />
+                <Link
+                  href="/tutors"
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-navy-700 hover:text-navy-900"
+                >
+                  Browse all tutors <ArrowRight size={16} />
+                </Link>
+              </div>
             </div>
 
             {featured.length === 0 ? (

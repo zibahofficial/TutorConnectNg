@@ -521,6 +521,14 @@ export default function TutorDashboard() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-bold text-slate-700">{formatNaira(b.totalPrice)}</span>
                     <StatusBadge status={b.status} />
+                    {b.status === "accepted" && (
+                      <button
+                        onClick={() => updateStatus(b.id, "completed")}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+                      >
+                        <Check size={14} /> Mark Completed
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}
@@ -885,7 +893,9 @@ export default function TutorDashboard() {
       <div className="mt-6">
         <PrivateChat
           myKey={authUser?.id || ""}
-          emptyListHint="Students appear here as soon as they message you. Chats are private between you and the student."
+          pickerFetchAction="list_chat_users"
+          pickerLabel="＋ Start a private chat"
+          emptyListHint="No conversations yet — pick an available student, parent, or admin above to start a private chat."
           minThreadHeight="min-h-[340px]"
         />
       </div>

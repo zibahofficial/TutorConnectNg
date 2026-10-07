@@ -16,8 +16,10 @@ import {
   LogOut,
   MapPin,
   MessageCircle,
+  MessageSquarePlus,
   Pencil,
   Plus,
+  Star,
   Trash2,
   User,
   UserCheck,
@@ -94,7 +96,11 @@ function bookingAuthHeaders() {
 
 export default function ParentDashboard() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "bookings"
+      ? "bookings"
+      : "overview"
+  );
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   // Switch tab and smoothly scroll the user down to the content.
@@ -118,6 +124,13 @@ export default function ParentDashboard() {
   const [childError, setChildError] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const [reviewTarget, setReviewTarget] = useState<Booking | null>(null);
+  const [reviewedIds, setReviewedIds] = useState<string[]>([]);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState("");
 
   // Booking edit / cancel / delete (parents can fix their own mistakes)
   const [editTarget, setEditTarget] = useState<Booking | null>(null);
@@ -178,6 +191,13 @@ export default function ParentDashboard() {
         setBookings(filtered);
       })
       .finally(() => setLoading(false));
+
+    fetch("/api/reviews?mine=true", { headers: bookingAuthHeaders() })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (Array.isArray(data?.bookingIds)) setReviewedIds(data.bookingIds);
+      })
+      .catch(() => {});
   }, [user]);
 
   const stats = useMemo(() => {
@@ -332,6 +352,30 @@ export default function ParentDashboard() {
       // ignore storage errors in strict private modes
     }
     router.replace("/");
+  }
+
+  async function submitReview() {
+    if (!reviewTarget || reviewSubmitting) return;
+    const target = reviewTarget;
+    setReviewSubmitting(true);
+    setReviewError("");
+    try {
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: bookingAuthHeaders(),
+        body: JSON.stringify({ bookingId: target.id, rating, comment }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "The review could not be saved.");
+      setReviewedIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
+      setReviewTarget(null);
+      setRating(5);
+      setComment("");
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "The review could not be saved.");
+    } finally {
+      setReviewSubmitting(false);
+    }
   }
 
   async function handleCancelBooking() {
@@ -558,6 +602,11 @@ export default function ParentDashboard() {
                 <BookingsPanel
                   bookings={bookings}
                   loading={loading}
+                  reviewedIds={reviewedIds}
+                  onReview={(booking) => {
+                    setReviewError("");
+                    setReviewTarget(booking);
+                  }}
                   onEdit={setEditTarget}
                   onCancel={setCancelTarget}
                   onDelete={setDeleteTarget}
@@ -568,9 +617,9 @@ export default function ParentDashboard() {
               {activeTab === "chat" && (
                 <PrivateChat
                   myKey={user?.id || ""}
-                  pickerFetchAction="list_chat_tutors"
-                  pickerLabel="＋ Chat a tutor"
-                  emptyListHint="No conversations yet — pick a tutor above to start a private chat about your child's sessions."
+                  pickerFetchAction="list_chat_users"
+                  pickerLabel="＋ Start a private chat"
+                  emptyListHint="No conversations yet — pick an available student, tutor, or admin above to start a private chat."
                 />
               )}
 
@@ -589,6 +638,52 @@ export default function ParentDashboard() {
         </div>
       </main>
       <Footer />
+
+      {reviewTarget && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+          onClick={() => !reviewSubmitting && setReviewTarget(null)}
+        >
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-soft" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-slate-900">
+                Review {reviewTarget.tutorName}
+              </h3>
+              <button
+                onClick={() => setReviewTarget(null)}
+                disabled={reviewSubmitting}
+                className="rounded-full p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-60"
+                aria-label="Close review form"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mb-4 flex justify-center gap-1.5">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setRating(n)} disabled={reviewSubmitting} aria-label={`${n} star review`}>
+                  <Star size={28} className={n <= rating ? "fill-amber-400 text-amber-400" : "text-slate-200"} />
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={4}
+              disabled={reviewSubmitting}
+              placeholder="Share how the session went..."
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none disabled:opacity-60"
+            />
+            {reviewError && <p className="mt-3 text-sm font-medium text-rose-600">{reviewError}</p>}
+            <button
+              onClick={submitReview}
+              disabled={reviewSubmitting}
+              className="btn-primary mt-4 w-full disabled:opacity-60"
+            >
+              {reviewSubmitting ? "Saving Review…" : "Submit Review"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {editTarget && (
         <EditBookingModal
@@ -860,12 +955,16 @@ function UpcomingBookingsPanel({
 function BookingsPanel({
   bookings,
   loading,
+  reviewedIds,
+  onReview,
   onEdit,
   onCancel,
   onDelete,
 }: {
   bookings: Booking[];
   loading: boolean;
+  reviewedIds: string[];
+  onReview: (b: Booking) => void;
   onEdit: (b: Booking) => void;
   onCancel: (b: Booking) => void;
   onDelete: (b: Booking) => void;
@@ -931,6 +1030,19 @@ function BookingsPanel({
                       <X size={13} /> Cancel
                     </button>
                   </>
+                )}
+                {b.status === "completed" && !reviewedIds.includes(b.id) && (
+                  <button
+                    onClick={() => onReview(b)}
+                    className="inline-flex items-center gap-1 rounded-full border border-navy-200 px-3 py-1.5 text-xs font-bold text-navy-700 hover:bg-navy-50"
+                  >
+                    <MessageSquarePlus size={13} /> Review
+                  </button>
+                )}
+                {reviewedIds.includes(b.id) && (
+                  <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                    <Star size={13} className="fill-emerald-500 text-emerald-500" /> Reviewed
+                  </span>
                 )}
                 <button
                   onClick={() => onDelete(b)}
