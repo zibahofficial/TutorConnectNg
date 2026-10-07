@@ -83,7 +83,11 @@ function bookingAuthHeaders() {
 
 export default function StudentDashboard() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "bookings"
+      ? "bookings"
+      : "overview"
+  );
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   // Switch tab and smoothly scroll the user down to the content so every
