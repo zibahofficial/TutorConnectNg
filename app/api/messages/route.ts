@@ -113,8 +113,31 @@ export async function GET(req: NextRequest) {
 
   const withKey = params.get("with");
   const wantConversations = params.get("conversations") === "1";
+  const wantContacts = params.get("contacts") === "1";
 
   try {
+    if (wantContacts) {
+      try {
+        const typedSql = sql as unknown as SqlTag;
+        const rows = await typedSql`
+          SELECT id, full_name
+          FROM users
+          WHERE role IN ('student', 'parent', 'tutor', 'admin')
+            AND role <> ${auth.role}
+            AND id <> ${auth.id}
+          ORDER BY full_name
+          LIMIT 200
+        `;
+        return NextResponse.json({
+          source: "neon",
+          contacts: rows.map((row) => ({ id: row.id, fullName: row.full_name })),
+        });
+      } catch (err) {
+        console.error("Neon chat contacts query failed:", err);
+        return NextResponse.json({ error: "Could not load chat contacts." }, { status: 500 });
+      }
+    }
+
     if (withKey) {
       try {
         const typedSql = sql as unknown as SqlTag;

@@ -80,16 +80,15 @@ export default function PrivateChat({
       });
 
     if (pickerFetchAction) {
-      fetch(`/api/auth?action=${encodeURIComponent(pickerFetchAction)}`, { headers: authHeaders })
+      fetch("/api/messages?contacts=1", { headers: authHeaders })
         .then(async (res) => {
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || "Could not load chat contacts.");
           return data;
         })
         .then((data) => {
-          const contacts = data.users ?? data.tutors;
-          if (active && Array.isArray(contacts)) {
-            setFetchedChoices(contacts.map((t: { id: string; fullName: string }) => ({ key: t.id, name: t.fullName })));
+          if (active && Array.isArray(data.contacts)) {
+            setFetchedChoices(data.contacts.map((contact: { id: string; fullName: string }) => ({ key: contact.id, name: contact.fullName })));
           }
         })
         .catch((err) => {
