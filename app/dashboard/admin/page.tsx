@@ -8,6 +8,8 @@ import {
   Ban,
   BarChart3,
   CalendarCheck2,
+  ChevronDown,
+  ChevronUp,
   FileCheck2,
   Lock,
   RefreshCw,
@@ -23,6 +25,8 @@ import PrivateChat from "@/components/PrivateChat";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
 import AccountStatusBadge from "@/components/AccountStatusBadge";
+import TutorDetailsPanel from "@/components/TutorDetailsPanel";
+import { dashboardPathForRole } from "@/lib/redirect";
 import type { Booking } from "@/lib/types";
 
 function formatNaira(amount: number) {
@@ -111,24 +115,32 @@ export default function AdminDashboard() {
   const [userActionId, setUserActionId] = useState("");
   const [actionError, setActionError] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  // Which tutor row has its real-record details panel open (one at a time).
+  const [expandedTutorId, setExpandedTutorId] = useState("");
+  const [expandedAppId, setExpandedAppId] = useState("");
 
   useEffect(() => {
+    const loginWithReturn = `/login?next=${encodeURIComponent("/dashboard/admin")}`;
     const rawUser = localStorage.getItem("tutorconnect_user");
     if (!rawUser) {
-      router.replace("/login");
+      // Signed-out users go to the login screen (returning here after an
+      // admin login) — not the homepage.
+      router.replace(loginWithReturn);
       return;
     }
     try {
       const user = JSON.parse(rawUser);
       if (user.role !== "admin") {
-        router.replace("/");
+        // Non-admins must never be in the admin panel: send them to their
+        // own role dashboard.
+        router.replace(dashboardPathForRole(user.role));
       } else {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of localStorage auth state after hydration
         setAuthChecked(true);
         setAdminId(user.id || "");
       }
     } catch {
-      router.replace("/login");
+      router.replace(loginWithReturn);
     }
   }, [router]);
 
@@ -382,11 +394,20 @@ export default function AdminDashboard() {
             </p>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {applications.map((a) => (
+              {applications.map((a) => {
+                const appExpanded = expandedAppId === a.userId;
+                return (
                 <li key={a.userId} className="px-5 py-5 sm:px-6">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="break-words font-semibold text-slate-900">{a.fullName}</p>
+                      <button
+                        onClick={() => setExpandedAppId(appExpanded ? "" : a.userId)}
+                        className="break-words text-left font-semibold text-slate-900 underline-offset-2 hover:text-navy-700 hover:underline"
+                        aria-expanded={appExpanded}
+                        title={appExpanded ? "Hide details" : "View details"}
+                      >
+                        {a.fullName}
+                      </button>
                       <p className="break-all text-xs text-slate-500">{a.email}</p>
                       <p className="mt-0.5 text-[11px] text-slate-400">
                         Applied{" "}
@@ -444,8 +465,11 @@ export default function AdminDashboard() {
                         : ""}
                     </p>
                   )}
+
+                  {appExpanded && <TutorDetailsPanel userId={a.userId} />}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>
@@ -470,6 +494,7 @@ export default function AdminDashboard() {
                 const name = t.full_name || "Tutor";
                 const status = t.verification_status ?? (t.is_verified ? "approved" : "pending");
                 const busy = reviewingId === t.user_id;
+                const expanded = expandedTutorId === t.user_id;
                 return (
                   <li key={t.tutor_profile_id} className="px-5 py-5 sm:px-6">
                     <div className="flex flex-col gap-3">
@@ -484,7 +509,14 @@ export default function AdminDashboard() {
                           </div>
                         )}
                         <div className="min-w-0">
-                          <p className="break-words font-semibold text-slate-900">{name}</p>
+                          <button
+                            onClick={() => setExpandedTutorId(expanded ? "" : t.user_id)}
+                            className="break-words text-left font-semibold text-slate-900 underline-offset-2 hover:text-navy-700 hover:underline"
+                            aria-expanded={expanded}
+                            title={expanded ? "Hide details" : "View details"}
+                          >
+                            {name}
+                          </button>
                           <p className="break-all text-xs text-slate-500">{t.email}</p>
                           <p className="mt-0.5 break-words text-xs text-slate-500">
                             {t.headline || "No headline provided"}
@@ -504,43 +536,81 @@ export default function AdminDashboard() {
 
                       <div className="flex flex-wrap items-center gap-2">
                         <AccountStatusBadge status={t.account_status} verificationStatus={status} />
-                        {status !== "approved" && (
-                          <button
-                            onClick={() => updateTutorStatus(t.user_id, "approved")}
-                            disabled={busy}
-                            className="inline-flex items-center gap-1 rounded-full bg-navy-700 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-navy-800 disabled:opacity-60"
-                          >
-                            <ShieldCheck size={13} /> Approve
-                          </button>
-                        )}
-                        {status !== "rejected" && (
-                          <button
-                            onClick={() => updateTutorStatus(t.user_id, "rejected")}
-                            disabled={busy}
-                            className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-60"
-                          >
-                            <Ban size={13} /> Reject
-                          </button>
+                        <button
+                          onClick={() => setExpandedTutorId(expanded ? "" : t.user_id)}
+                          className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-100"
+                          aria-expanded={expanded}
+                        >
+                          {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          {expanded ? "Hide Details" : "View Details"}
+                        </button>
+                        {/* Actions correspond to the real database status. */}
+                        {status === "pending" && (
+                          <>
+                            <button
+                              onClick={() => updateTutorStatus(t.user_id, "approved")}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 rounded-full bg-navy-700 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-navy-800 disabled:opacity-60"
+                            >
+                              <ShieldCheck size={13} /> Approve
+                            </button>
+                            <button
+                              onClick={() => updateTutorStatus(t.user_id, "rejected")}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:opacity-60"
+                            >
+                              <Ban size={13} /> Reject
+                            </button>
+                          </>
                         )}
                         {status === "approved" && (
+                          <>
+                            <button
+                              onClick={() => updateTutorStatus(t.user_id, "suspended")}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-200 disabled:opacity-60"
+                            >
+                              <Ban size={13} /> Suspend
+                            </button>
+                            <button
+                              onClick={() => updateTutorStatus(t.user_id, "pending")}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-60"
+                            >
+                              <RefreshCw size={13} /> Send for re-review
+                            </button>
+                          </>
+                        )}
+                        {status === "rejected" && (
                           <button
-                            onClick={() => updateTutorStatus(t.user_id, "suspended")}
+                            onClick={() => updateTutorStatus(t.user_id, "pending")}
                             disabled={busy}
-                            className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-200 disabled:opacity-60"
+                            className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-60"
                           >
-                            <Ban size={13} /> Suspend
+                            <RefreshCw size={13} /> Re-review
                           </button>
                         )}
                         {status === "suspended" && (
-                          <button
-                            onClick={() => updateTutorStatus(t.user_id, "approved")}
-                            disabled={busy}
-                            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60"
-                          >
-                            <ShieldCheck size={13} /> Reinstate
-                          </button>
+                          <>
+                            <button
+                              onClick={() => updateTutorStatus(t.user_id, "approved")}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60"
+                            >
+                              <ShieldCheck size={13} /> Reinstate
+                            </button>
+                            <button
+                              onClick={() => updateTutorStatus(t.user_id, "pending")}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-60"
+                            >
+                              <RefreshCw size={13} /> Send for re-review
+                            </button>
+                          </>
                         )}
                       </div>
+
+                      {expanded && <TutorDetailsPanel userId={t.user_id} />}
                     </div>
                   </li>
                 );
@@ -670,34 +740,44 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center justify-end gap-1.5">
-                          {u.role !== "admin" && status !== "approved" && (
-                            <button
-                              onClick={() => updateUserStatus(u.id, "approved")}
-                              disabled={busy}
-                              className="rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
-                            >
-                              Approve
-                            </button>
+                          {/* Actions correspond to the real database status. */}
+                          {u.role !== "admin" && status === "pending" && (
+                            <>
+                              <button
+                                onClick={() => updateUserStatus(u.id, "approved")}
+                                disabled={busy}
+                                className="rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => updateUserStatus(u.id, "rejected")}
+                                disabled={busy}
+                                className="rounded-full bg-rose-50 px-3 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-60"
+                              >
+                                Reject
+                              </button>
+                            </>
                           )}
-                          {u.role !== "admin" && status !== "rejected" && (
-                            <button
-                              onClick={() => updateUserStatus(u.id, "rejected")}
-                              disabled={busy}
-                              className="rounded-full bg-rose-50 px-3 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-60"
-                            >
-                              Reject
-                            </button>
+                          {u.role !== "admin" && status === "approved" && (
+                            <>
+                              <button
+                                onClick={() => updateUserStatus(u.id, "suspended")}
+                                disabled={busy}
+                                className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-60"
+                              >
+                                Suspend
+                              </button>
+                              <button
+                                onClick={() => updateUserStatus(u.id, "pending")}
+                                disabled={busy}
+                                className="rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                              >
+                                Send for re-review
+                              </button>
+                            </>
                           )}
-                          {u.role !== "admin" && status !== "suspended" && (
-                            <button
-                              onClick={() => updateUserStatus(u.id, "suspended")}
-                              disabled={busy}
-                              className="rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-60"
-                            >
-                              Suspend
-                            </button>
-                          )}
-                          {u.role !== "admin" && status !== "pending" && (
+                          {u.role !== "admin" && status === "rejected" && (
                             <button
                               onClick={() => updateUserStatus(u.id, "pending")}
                               disabled={busy}
@@ -705,6 +785,24 @@ export default function AdminDashboard() {
                             >
                               Re-review
                             </button>
+                          )}
+                          {u.role !== "admin" && status === "suspended" && (
+                            <>
+                              <button
+                                onClick={() => updateUserStatus(u.id, "approved")}
+                                disabled={busy}
+                                className="rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                              >
+                                Reinstate
+                              </button>
+                              <button
+                                onClick={() => updateUserStatus(u.id, "pending")}
+                                disabled={busy}
+                                className="rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                              >
+                                Send for re-review
+                              </button>
+                            </>
                           )}
                           {u.role !== "admin" && (
                             <button
