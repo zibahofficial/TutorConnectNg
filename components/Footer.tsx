@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { GraduationCap, Mail, MapPin, Phone } from "lucide-react";
+import AdminLink from "@/components/AdminLink";
 
 function FacebookIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -75,7 +76,7 @@ export default function Footer() {
             <li><Link href="/tutors" className="hover:text-white">Find Tutors</Link></li>
             <li><Link href="/how-it-works" className="hover:text-white">How It Works</Link></li>
             <li><Link href="/signup?role=tutor" className="hover:text-white">Become a Tutor</Link></li>
-            <li><Link href="/dashboard/admin" className="hover:text-white">Admin Panel</Link></li>
+            <li><AdminLink href="/dashboard/admin" className="hover:text-white">Admin Panel</AdminLink></li>
           </ul>
         </div>
 

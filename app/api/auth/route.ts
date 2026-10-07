@@ -732,6 +732,131 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ source: "neon", tutors: rows });
     }
 
+    if (action === "admin_tutor_details") {
+      const auth = await getUserFromRequest(req, ["admin"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const targetId = (body.targetId as string) || "";
+      if (!targetId) return NextResponse.json({ error: "targetId is required." }, { status: 400 });
+
+      // Everything below is read straight from PostgreSQL. Nothing is
+      // fabricated: a field the tutor never submitted comes back null and the
+      // UI shows an honest "not provided" message.
+      if (!hasDatabase) {
+        return NextResponse.json({
+          source: "none",
+          hint: "No database is configured, so tutor profiles cannot be loaded.",
+        });
+      }
+
+      const typedSql = sql as unknown as SqlTag;
+      try {
+        const rows = await typedSql`
+          SELECT
+            u.id, u.email, u.full_name, u.phone, u.city, u.state, u.avatar_url,
+            u.created_at AS joined_at,
+            CASE WHEN u.role = 'admin' THEN 'approved' ELSE u.account_status END AS account_status,
+            tp.id AS tutor_profile_id,
+            tp.headline, tp.bio, tp.hourly_rate, tp.currency, tp.years_experience,
+            tp.rating_avg, tp.total_reviews, tp.total_sessions,
+            tp.is_verified, tp.verification_status,
+            tp.created_at AS profile_created_at
+          FROM users u
+          LEFT JOIN tutor_profiles tp ON tp.user_id = u.id
+          WHERE u.id = ${targetId}
+          LIMIT 1
+        `;
+        const row = rows[0] as Record<string, unknown> | undefined;
+        if (!row) return NextResponse.json({ error: "Tutor not found." }, { status: 404 });
+
+        const [subjectRows, availabilityRows, documentRows, verificationRows] = await Promise.all([
+          typedSql`
+            SELECT ts.subject_name
+            FROM tutor_subjects ts
+            JOIN tutor_profiles tp ON tp.id = ts.tutor_id
+            WHERE tp.user_id = ${targetId}
+            ORDER BY ts.subject_name
+          `,
+          typedSql`
+            SELECT ta.day_of_week, ta.start_time::text AS start, ta.end_time::text AS end
+            FROM tutor_availability ta
+            JOIN tutor_profiles tp ON tp.id = ta.tutor_id
+            WHERE tp.user_id = ${targetId}
+            ORDER BY ta.day_of_week, ta.start_time
+          `,
+          typedSql`
+            SELECT id, doc_type, file_name, file_data, created_at
+            FROM tutor_documents
+            WHERE user_id = ${targetId}
+            ORDER BY created_at
+          `,
+          typedSql`
+            SELECT status, applied_at, reviewed_at
+            FROM tutor_verifications
+            WHERE user_id = ${targetId}
+            LIMIT 1
+          `,
+        ]);
+
+        return NextResponse.json({
+          source: "neon",
+          tutor: {
+            id: String(row.id),
+            email: row.email ? String(row.email) : null,
+            fullName: row.full_name ? String(row.full_name) : null,
+            phone: row.phone ? String(row.phone) : null,
+            city: row.city ? String(row.city) : null,
+            state: row.state ? String(row.state) : null,
+            avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
+            joinedAt: row.joined_at ? new Date(String(row.joined_at)).toISOString() : null,
+            accountStatus: row.account_status ? String(row.account_status) : null,
+            hasProfile: row.tutor_profile_id != null,
+            headline: row.headline ? String(row.headline) : null,
+            bio: row.bio ? String(row.bio) : null,
+            hourlyRate: row.hourly_rate != null ? Number(row.hourly_rate) : null,
+            currency: row.currency ? String(row.currency) : "NGN",
+            yearsExperience: row.years_experience != null ? Number(row.years_experience) : null,
+            ratingAvg: row.rating_avg != null ? Number(row.rating_avg) : null,
+            totalReviews: row.total_reviews != null ? Number(row.total_reviews) : null,
+            totalSessions: row.total_sessions != null ? Number(row.total_sessions) : null,
+            isVerified: row.is_verified === true,
+            verificationStatus: row.verification_status ? String(row.verification_status) : null,
+            profileCreatedAt: row.profile_created_at
+              ? new Date(String(row.profile_created_at)).toISOString()
+              : null,
+          },
+          subjects: subjectRows.map((r) => String(r.subject_name)),
+          availability: availabilityRows.map((r) => ({
+            day: INDEX_TO_DAY[Number(r.day_of_week)] ?? "Mon",
+            start: String(r.start).slice(0, 5),
+            end: String(r.end).slice(0, 5),
+          })),
+          documents: documentRows.map((r) => ({
+            id: String(r.id),
+            type: String(r.doc_type),
+            name: String(r.file_name),
+            dataUrl: String(r.file_data),
+            uploadedAt: r.created_at ? new Date(String(r.created_at)).toISOString() : "",
+          })),
+          verification: verificationRows.length
+            ? {
+                status: String(verificationRows[0].status),
+                appliedAt: new Date(String(verificationRows[0].applied_at)).toISOString(),
+                reviewedAt: verificationRows[0].reviewed_at
+                  ? new Date(String(verificationRows[0].reviewed_at)).toISOString()
+                  : null,
+              }
+            : null,
+        });
+      } catch (err) {
+        console.error("Neon tutor details failed:", err);
+        return NextResponse.json(
+          { error: "Could not load that tutor's profile right now. Please try again." },
+          { status: 500 }
+        );
+      }
+    }
+
     if (action === "admin_update_tutor_status") {
       const auth = await getUserFromRequest(req, ["admin"]);
       if (auth instanceof NextResponse) return auth;
@@ -776,10 +901,13 @@ export async function POST(req: NextRequest) {
         console.warn("admin_update_tutor_status: account_status column unavailable; tutor_profiles updated only.");
       }
       if (next.verification) {
+        // A re-review (status "pending") clears the review timestamp and never
+        // marks the tutor verified — only an explicit approve does that.
+        const reviewedAt = next.verification === "pending" ? null : new Date().toISOString();
         await typedSql`
           INSERT INTO tutor_verifications (user_id, status, applied_at, reviewed_at)
-          VALUES (${targetId}, ${next.verification}, NOW(), NOW())
-          ON CONFLICT (user_id) DO UPDATE SET status = ${next.verification}, reviewed_at = NOW()
+          VALUES (${targetId}, ${next.verification}, NOW(), ${reviewedAt})
+          ON CONFLICT (user_id) DO UPDATE SET status = ${next.verification}, reviewed_at = ${reviewedAt}
         `;
       }
 

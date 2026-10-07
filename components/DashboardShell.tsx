@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
+import AdminLink from "@/components/AdminLink";
 
 const TABS = [
   { href: "/dashboard/student", label: "Student / Parent", icon: UserRound },
@@ -76,14 +77,20 @@ export default function DashboardShell({
         <div className="container-app flex gap-1 overflow-x-auto pb-3">
           {TABS.map((tab) => {
             const active = pathname === tab.href;
+            const classes = `flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+              active ? "bg-navy-700 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            }`;
+            // The Admin tab routes by role so a non-admin is sent to their own
+            // dashboard instead of the admin panel.
+            if (tab.href === "/dashboard/admin") {
+              return (
+                <AdminLink key={tab.href} href={tab.href} className={classes}>
+                  <tab.icon size={14} /> {tab.label}
+                </AdminLink>
+              );
+            }
             return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                  active ? "bg-navy-700 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}
-              >
+              <Link key={tab.href} href={tab.href} className={classes}>
                 <tab.icon size={14} /> {tab.label}
               </Link>
             );

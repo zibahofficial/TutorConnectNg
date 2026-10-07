@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { GraduationCap, Search, Menu, X, User } from "lucide-react";
+import AdminLink from "@/components/AdminLink";
 
 const NAV_LINKS = [
   { href: "/tutors", label: "Tutors" },
@@ -48,16 +49,23 @@ export default function Navbar() {
         <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">
           {NAV_LINKS.map((link) => {
             const active = pathname === link.href;
+            const classes = `rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+              active
+                ? "bg-navy-50 text-navy-700"
+                : "text-slate-600 hover:bg-slate-100 hover:text-navy-700"
+            }`;
+            // The Admin link routes by role: admins go to the panel, signed-out
+            // users go to /login?next=/dashboard/admin, non-admins to their
+            // own dashboard.
+            if (link.href === "/dashboard/admin") {
+              return (
+                <AdminLink key={link.href} href={link.href} className={classes}>
+                  {link.label}
+                </AdminLink>
+              );
+            }
             return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-navy-50 text-navy-700"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-navy-700"
-                }`}
-              >
+              <Link key={link.href} href={link.href} className={classes}>
                 {link.label}
               </Link>
             );
@@ -123,16 +131,27 @@ export default function Navbar() {
             />
           </form>
           <nav className="flex flex-col gap-1">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                className="rounded-xl px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                {link.label}
-              </Link>
-            ))}
+            {NAV_LINKS.map((link) =>
+              link.href === "/dashboard/admin" ? (
+                <AdminLink
+                  key={link.href}
+                  href={link.href}
+                  className="rounded-xl px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  onNavigate={() => setOpen(false)}
+                >
+                  {link.label}
+                </AdminLink>
+              ) : (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  {link.label}
+                </Link>
+              )
+            )}
           </nav>
           <div className="mt-4 flex flex-col gap-2">
             <Link href="/login" className="btn-outline w-full text-sm" onClick={() => setOpen(false)}>

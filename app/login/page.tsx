@@ -5,6 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, GraduationCap, Loader2, Lock, Mail } from "lucide-react";
 import LegalModal, { LegalLink, type LegalDoc } from "@/components/LegalModal";
+import { dashboardPathForRole, safeInternalRedirect } from "@/lib/redirect";
+
+/**
+ * Reads the `next` query parameter (set by the Admin link) and returns it only
+ * when it is a safe same-origin relative path — never `//evil.com` or an
+ * absolute URL.
+ */
+function readNextParam(): string | null {
+  if (typeof window === "undefined") return null;
+  return safeInternalRedirect(new URLSearchParams(window.location.search).get("next"));
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +41,12 @@ export default function LoginPage() {
       localStorage.setItem("tutorconnect_token", data.token);
       localStorage.setItem("tutorconnect_user", JSON.stringify(data.user));
       const role = data.user?.role ?? "student";
-      router.push(role === "tutor" ? "/dashboard/tutor" : role === "parent" ? "/dashboard/parent" : role === "admin" ? "/dashboard/admin" : "/dashboard/student");
+      const fallback = dashboardPathForRole(role);
+      // Honor the safe `next` target (e.g. an admin returning from
+      // /login?next=/dashboard/admin). Non-admins are never sent to the admin
+      // panel, and unsafe targets fall back to their own dashboard.
+      const next = readNextParam();
+      router.push(next && (next !== "/dashboard/admin" || role === "admin") ? next : fallback);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
