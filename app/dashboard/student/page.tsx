@@ -111,6 +111,8 @@ export default function StudentDashboard() {
   const [reviewedIds, setReviewedIds] = useState<string[]>([]);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState("");
 
   // Booking edit / cancel (pending requests only)
   const [editTarget, setEditTarget] = useState<Booking | null>(null);
@@ -222,6 +224,13 @@ export default function StudentDashboard() {
         setBookings(filtered);
       })
       .finally(() => setLoading(false));
+
+    fetch("/api/reviews?mine=true", { headers: bookingAuthHeaders() })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (Array.isArray(data?.bookingIds)) setReviewedIds(data.bookingIds);
+      })
+      .catch(() => {});
   }, [authChecked, user]);
 
   const stats = useMemo(() => {
@@ -276,27 +285,27 @@ export default function StudentDashboard() {
   }
 
   async function submitReview() {
-    if (!reviewTarget) return;
+    if (!reviewTarget || reviewSubmitting) return;
+    const target = reviewTarget;
+    setReviewSubmitting(true);
+    setReviewError("");
     try {
-      await fetch("/api/reviews", {
+      const res = await fetch("/api/reviews", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId: reviewTarget.id,
-          tutorId: reviewTarget.tutorId,
-          studentId: user?.id || undefined,
-          studentName: user?.full_name || "Student",
-          rating,
-          comment,
-        }),
+        headers: bookingAuthHeaders(),
+        body: JSON.stringify({ bookingId: target.id, rating, comment }),
       });
-    } catch {
-      // demo mode; API may not persist in mock
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "The review could not be saved.");
+      setReviewedIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
+      setReviewTarget(null);
+      setRating(5);
+      setComment("");
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "The review could not be saved.");
+    } finally {
+      setReviewSubmitting(false);
     }
-    setReviewedIds((prev) => [...prev, reviewTarget.id]);
-    setReviewTarget(null);
-    setRating(5);
-    setComment("");
   }
 
   async function handleCancelBooking() {
@@ -553,7 +562,10 @@ export default function StudentDashboard() {
                     bookings={bookings}
                     loading={loading}
                     reviewedIds={reviewedIds}
-                    onReview={setReviewTarget}
+                    onReview={(booking) => {
+                      setReviewError("");
+                      setReviewTarget(booking);
+                    }}
                     onEdit={setEditTarget}
                     onCancel={setCancelTarget}
                   />
@@ -643,8 +655,13 @@ export default function StudentDashboard() {
               placeholder="Share how the session went..."
               className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
             />
-            <button onClick={submitReview} className="btn-primary mt-4 w-full">
-              Submit Review
+            {reviewError && <p className="mt-3 text-sm font-medium text-rose-600">{reviewError}</p>}
+            <button
+              onClick={submitReview}
+              disabled={reviewSubmitting}
+              className="btn-primary mt-4 w-full disabled:opacity-60"
+            >
+              {reviewSubmitting ? "Saving Review…" : "Submit Review"}
             </button>
           </div>
         </div>

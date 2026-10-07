@@ -521,6 +521,14 @@ export default function TutorDashboard() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-bold text-slate-700">{formatNaira(b.totalPrice)}</span>
                     <StatusBadge status={b.status} />
+                    {b.status === "accepted" && (
+                      <button
+                        onClick={() => updateStatus(b.id, "completed")}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+                      >
+                        <Check size={14} /> Mark Completed
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}
