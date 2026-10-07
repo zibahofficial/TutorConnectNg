@@ -63,7 +63,11 @@ export default function PrivateChat({
     let active = true;
     const qs = token ? `?token=${encodeURIComponent(token)}` : "";
     fetch(`/api/messages?conversations=1${qs}`, { headers: authHeaders })
-      .then((res) => (res.ok ? res.json() : { conversations: [] }))
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Could not load conversations.");
+        return data;
+      })
       .then((data) => {
         if (!active) return;
         const convos: ChatPartner[] = (data.conversations ?? []).map(
@@ -72,17 +76,26 @@ export default function PrivateChat({
         setPartners(convos);
         setActive((prev) => (prev && convos.some((p) => p.key === prev.key) ? prev : convos[0] ?? null));
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Could not load conversations.");
+      });
 
     if (pickerFetchAction) {
       fetch(`/api/auth?action=${pickerFetchAction}${qs}`, { headers: authHeaders })
-        .then((res) => (res.ok ? res.json() : { tutors: [] }))
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "Could not load chat contacts.");
+          return data;
+        })
         .then((data) => {
-          if (active && Array.isArray(data.tutors)) {
-            setFetchedChoices(data.tutors.map((t: { id: string; fullName: string }) => ({ key: t.id, name: t.fullName })));
+          const contacts = data.users ?? data.tutors;
+          if (active && Array.isArray(contacts)) {
+            setFetchedChoices(contacts.map((t: { id: string; fullName: string }) => ({ key: t.id, name: t.fullName })));
           }
         })
-        .catch(() => {});
+        .catch((err) => {
+          if (active) setError(err instanceof Error ? err.message : "Could not load chat contacts.");
+        });
     }
     return () => {
       active = false;
@@ -98,11 +111,20 @@ export default function PrivateChat({
       (token ? `&token=${encodeURIComponent(token)}` : "") + `&with=${encodeURIComponent(active.key)}`;
     const load = () =>
       fetch(`/api/messages?${qs}`, { headers: authHeaders })
-        .then((res) => (res.ok ? res.json() : { messages: [] }))
-        .then((data) => {
-          if (alive && Array.isArray(data.messages)) setMessages(data.messages);
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "Could not load this conversation.");
+          return data;
         })
-        .catch(() => {})
+        .then((data) => {
+          if (alive && Array.isArray(data.messages)) {
+            setMessages(data.messages);
+            setError("");
+          }
+        })
+        .catch((err) => {
+          if (alive) setError(err instanceof Error ? err.message : "Could not load this conversation.");
+        })
         .finally(() => {
           if (alive) setLoading(false);
         });
@@ -186,6 +208,7 @@ export default function PrivateChat({
               </select>
             </div>
           )}
+          {error && !active && <p className="mb-2 px-2 text-xs font-semibold text-rose-500">{error}</p>}
           <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Conversations</p>
           <div className="space-y-1">
             {partners.length === 0 && (

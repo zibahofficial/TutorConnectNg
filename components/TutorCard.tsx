@@ -97,8 +97,10 @@ export default function TutorCard({ tutor }: { tutor: Tutor }) {
 
           <div className="mt-5 flex items-center gap-2">
             <Link
-              href={`/tutors/${tutor.id}`}
-              className="btn-outline flex-1 !px-3 !py-2 text-sm"
+              href={`/tutors/${encodeURIComponent(tutor.id)}`}
+              prefetch={false}
+              className="btn-outline relative z-10 flex-1 !px-3 !py-2 text-sm"
+              aria-label={`View ${tutor.fullName}'s profile`}
             >
               View Profile
             </Link>

@@ -1230,31 +1230,50 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ source: "mock", savedTutors: saved });
     }
 
-    if (action === "list_chat_tutors") {
+    if (action === "list_chat_tutors" || action === "list_chat_users") {
       const auth = await getUserFromRequest(req);
       if (auth instanceof NextResponse) return auth;
 
-      // Real registered tutor accounts only (never mock/demo data).
+      // Keep the existing tutor-only picker compatible, while the shared chat
+      // picker lists the other supported roles (never the signed-in user or
+      // another account with the same role).
+      const tutorOnly = action === "list_chat_tutors";
       if (hasDatabase) {
         try {
           const typedSql = sql as unknown as SqlTag;
-          const rows = await typedSql`
-            SELECT id, full_name FROM users WHERE role = 'tutor' AND id <> ${auth.user.id} ORDER BY full_name LIMIT 200
-          `;
-          return NextResponse.json({
-            source: "neon",
-            tutors: rows.map((r) => ({ id: r.id, fullName: r.full_name })),
-          });
+          const rows = tutorOnly
+            ? await typedSql`
+                SELECT id, full_name FROM users
+                WHERE role = 'tutor' AND id <> ${auth.user.id}
+                ORDER BY full_name LIMIT 200
+              `
+            : await typedSql`
+                SELECT id, full_name FROM users
+                WHERE role IN ('student', 'parent', 'tutor', 'admin')
+                  AND role <> ${auth.user.role}
+                  AND id <> ${auth.user.id}
+                ORDER BY full_name LIMIT 200
+              `;
+          const users = rows.map((r) => ({ id: r.id, fullName: r.full_name }));
+          return NextResponse.json({ source: "neon", users, tutors: users });
         } catch (err) {
-          console.error("Neon tutor list failed:", err);
+          console.error("Neon chat user list failed:", err);
+          return NextResponse.json({ error: "Could not load chat contacts." }, { status: 500 });
         }
       }
 
+      if (!tutorOnly) {
+        return NextResponse.json({ error: "Private messaging is temporarily unavailable." }, { status: 503 });
+      }
+
       const store = getUserStore();
-      const tutors = Array.from(store.values())
-        .filter((u) => u.role === "tutor" && u.id !== auth.user.id)
+      const users = Array.from(store.values())
+        .filter((u) =>
+          u.id !== auth.user.id &&
+          (tutorOnly ? u.role === "tutor" : u.role !== auth.user.role)
+        )
         .map((u) => ({ id: u.id, fullName: u.fullName }));
-      return NextResponse.json({ source: "mock", tutors });
+      return NextResponse.json({ source: "mock", users, tutors: users });
     }
 
     if (action === "availability") {

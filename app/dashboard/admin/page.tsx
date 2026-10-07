@@ -829,7 +829,7 @@ export default function AdminDashboard() {
         <PrivateChat
           myKey={adminId}
           pickerOptions={adminUsers
-            .filter((u) => u.id !== adminId)
+            .filter((u) => u.id !== adminId && u.role !== "admin")
             .map((u) => ({ key: u.id, name: u.full_name || u.email }))}
           pickerLabel="＋ Message a user"
           emptyListHint="No conversations yet — pick a user above to start a private support chat."

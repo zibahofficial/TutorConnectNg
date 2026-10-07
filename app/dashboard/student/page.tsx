@@ -584,9 +584,9 @@ export default function StudentDashboard() {
                 {activeTab === "chat" && (
                   <PrivateChat
                     myKey={user?.id || ""}
-                    pickerFetchAction="list_chat_tutors"
-                    pickerLabel="＋ Chat a tutor"
-                    emptyListHint="No conversations yet — pick a tutor above to start a private chat. Real tutor accounts you sign up with will appear there."
+                    pickerFetchAction="list_chat_users"
+                    pickerLabel="＋ Start a private chat"
+                    emptyListHint="No conversations yet — pick an available tutor, parent, or admin above to start a private chat."
                   />
                 )}
 
