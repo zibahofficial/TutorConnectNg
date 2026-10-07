@@ -40,10 +40,14 @@ CREATE TABLE IF NOT EXISTS users (
   state           VARCHAR(100),
   avatar_url      TEXT,
   is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Admin review lifecycle for every account. Registrations always start as
+  -- 'pending'; only an admin can move an account to approved/rejected/suspended.
+  account_status  VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending | approved | rejected | suspended
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_account_status ON users(account_status);
 CREATE INDEX IF NOT EXISTS idx_users_state_city ON users(state, city);
 
 -- -------------------------------------------------------------------------
@@ -70,6 +74,25 @@ CREATE TABLE IF NOT EXISTS tutor_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_tutor_profiles_verified ON tutor_profiles(is_verified);
 CREATE INDEX IF NOT EXISTS idx_tutor_profiles_rate ON tutor_profiles(hourly_rate);
+
+-- -------------------------------------------------------------------------
+-- 2b. PARENT PROFILES
+-- -------------------------------------------------------------------------
+-- Written by parent registration (app/api/auth - action "signup", role
+-- "parent") and read by the parent dashboard's children list.
+CREATE TABLE IF NOT EXISTS parent_profiles (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  child_name        VARCHAR(150),
+  child_age         SMALLINT,
+  educational_level VARCHAR(100),
+  tutor_budget      NUMERIC(10, 2),
+  learning_mode     VARCHAR(50),
+  terms_agreed_at   TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_parent_profiles_user ON parent_profiles(user_id);
 
 -- -------------------------------------------------------------------------
 -- 3. TUTOR SUBJECTS

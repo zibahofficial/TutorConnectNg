@@ -7,6 +7,15 @@ import { BadgeCheck, MapPin, Star, Wifi } from "lucide-react";
 import type { Tutor } from "@/lib/types";
 import BookingModal from "./BookingModal";
 
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("") || "T";
+}
+
 function formatNaira(amount: number) {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -22,13 +31,21 @@ export default function TutorCard({ tutor }: { tutor: Tutor }) {
     <>
       <div className="card-glow group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card hover:shadow-glow">
         <div className="relative h-44 w-full overflow-hidden">
-          <Image
-            src={tutor.avatarUrl}
-            alt={tutor.fullName}
-            fill
-            sizes="(max-width: 768px) 100vw, 320px"
-            className="object-cover transition-transform duration-500 group-hover:scale-105"
-          />
+          {tutor.avatarUrl ? (
+            <Image
+              src={tutor.avatarUrl}
+              alt={tutor.fullName}
+              fill
+              sizes="(max-width: 768px) 100vw, 320px"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-navy-600 to-navy-800">
+              <span className="font-display text-4xl font-extrabold text-white/90">
+                {initials(tutor.fullName)}
+              </span>
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
           {tutor.isVerified && (
             <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-emerald-700 shadow-sm">

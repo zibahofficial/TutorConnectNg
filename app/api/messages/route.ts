@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
 import { getUserStore, verifyToken } from "@/lib/auth-store";
-import { getTutorById } from "@/lib/mock-data";
 import type { ChatMessage, ChatConversation } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -47,8 +46,6 @@ function getAuthUser(req: NextRequest): AuthUser | null {
 /** Best-effort display-name resolution for a party key (tutor, user, or booking party). */
 async function resolveName(key: string): Promise<string | null> {
   if (!key) return null;
-  const tutor = getTutorById(key);
-  if (tutor?.fullName) return tutor.fullName;
   for (const u of getUserStore().values()) {
     if (u.id === key) return u.fullName;
   }
@@ -60,11 +57,17 @@ async function resolveName(key: string): Promise<string | null> {
   if (hasDatabase && UUID_RE.test(key)) {
     try {
       const typedSql = sql as unknown as SqlTag;
-      const rows = await typedSql`SELECT full_name FROM users WHERE id = ${key} LIMIT 1`;
-      const name = rows[0]?.full_name;
-      if (name) return String(name);
-    } catch {
-      // fall through
+      const byUser = await typedSql`SELECT full_name FROM users WHERE id = ${key} LIMIT 1`;
+      if (byUser[0]?.full_name) return String(byUser[0].full_name);
+      // A tutor_profiles.id (the id used on tutor cards) resolves to its owner.
+      const byProfile = await typedSql`
+        SELECT u.full_name
+        FROM tutor_profiles tp JOIN users u ON u.id = tp.user_id
+        WHERE tp.id = ${key} LIMIT 1
+      `;
+      if (byProfile[0]?.full_name) return String(byProfile[0].full_name);
+    } catch (err) {
+      console.error("Chat partner name lookup failed:", err);
     }
   }
   return null;

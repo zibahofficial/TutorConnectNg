@@ -21,10 +21,8 @@ import PrivateChat from "@/components/PrivateChat";
 import { TUTOR_HEADLINES, TUTOR_STATES, QUALIFICATIONS, TEACHING_MODES, TUTOR_DOCUMENT_TYPES } from "@/lib/tutor-options";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
-import { getTutorById } from "@/lib/mock-data";
 import type { AvailabilitySlot, Booking } from "@/lib/types";
 
-const DEMO_TUTOR_ID = "t1";
 const DAYS: AvailabilitySlot["day"][] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function formatNaira(amount: number) {
@@ -80,10 +78,10 @@ export default function TutorDashboard() {
     setAuthChecked(true);
   }, [router]);
 
-  const tutor = getTutorById(DEMO_TUTOR_ID)!;
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [availability, setAvailability] = useState<AvailabilitySlot[]>(tutor.availability);
+  // Weekly availability is loaded from the tutor's own saved slots below.
+  const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
   const [newSlot, setNewSlot] = useState<AvailabilitySlot>({ day: "Mon", start: "09:00", end: "11:00" });
 
 
@@ -111,9 +109,11 @@ export default function TutorDashboard() {
   }
 
   useEffect(() => {
-    fetch(`/api/bookings?tutorId=${DEMO_TUTOR_ID}`, { headers: bookingAuthHeaders() })
+    // The API scopes results to the signed-in tutor's own profile server-side.
+    fetch("/api/bookings", { headers: bookingAuthHeaders() })
       .then((res) => res.json())
       .then((data) => setBookings(data.bookings ?? []))
+      .catch((err) => console.error("Could not load tutor bookings:", err))
       .finally(() => setLoading(false));
   }, []);
 
@@ -455,7 +455,7 @@ export default function TutorDashboard() {
         <StatCard icon={Check} label="Completed Sessions" value={String(stats.completed)} accent="emerald" />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white shadow-card">
             <div className="border-b border-slate-100 px-6 py-4">

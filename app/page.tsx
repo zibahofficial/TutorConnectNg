@@ -8,17 +8,31 @@ import HowItWorks from "@/components/HowItWorks";
 import TutorCard from "@/components/TutorCard";
 import Testimonials from "@/components/Testimonials";
 import Footer from "@/components/Footer";
-import { TUTORS } from "@/lib/mock-data";
+import { fetchApprovedTutors, fetchPlatformStats, type PlatformStats } from "@/db/tutors";
+import type { Tutor } from "@/lib/types";
 
-export default function HomePage() {
-  const featured = TUTORS.filter((t) => t.isVerified).slice(0, 4);
+// Tutor lists and platform counters must always come from the live database so
+// a newly approved tutor appears immediately (never a stale build-time copy).
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  let tutors: Tutor[] = [];
+  let stats: PlatformStats | null = null;
+  try {
+    [tutors, stats] = await Promise.all([fetchApprovedTutors(8), fetchPlatformStats()]);
+  } catch (err) {
+    // Logged, not hidden — but the marketing page still renders instead of
+    // taking the whole site down when the database hiccups.
+    console.error("Homepage tutor query failed:", err);
+  }
+  const featured = tutors.slice(0, 4);
 
   return (
     <>
       <Navbar />
       <main className="flex-1">
         <HeroSlider />
-        <StatsBar />
+        <StatsBar stats={stats} />
         <SubjectGrid />
         <HowItWorks />
 
@@ -41,11 +55,24 @@ export default function HomePage() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {featured.map((tutor) => (
-                <TutorCard key={tutor.id} tutor={tutor} />
-              ))}
-            </div>
+            {featured.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+                <h3 className="font-display text-lg font-bold text-slate-800">No approved tutors yet</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+                  Tutors appear here once they have registered and an admin has
+                  reviewed and verified their profile.
+                </p>
+                <Link href="/signup?role=tutor" className="btn-primary mt-6 inline-flex">
+                  Become a Tutor
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                {featured.map((tutor) => (
+                  <TutorCard key={tutor.id} tutor={tutor} />
+                ))}
+              </div>
+            )}
           </div>
         </section>
 

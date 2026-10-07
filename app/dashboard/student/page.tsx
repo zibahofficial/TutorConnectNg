@@ -31,7 +31,6 @@ import PrivateChat from "@/components/PrivateChat";
 import Footer from "@/components/Footer";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/StatusBadge";
-import { TUTORS } from "@/lib/mock-data";
 import type { Booking } from "@/lib/types";
 
 type TabId = "overview" | "bookings" | "wishlist" | "certificates" | "chat" | "profile";
@@ -105,6 +104,8 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
 
   const [savedTutorIds, setSavedTutorIds] = useState<string[]>([]);
+  // Real saved-tutor records (name / headline / rate) as stored by the API.
+  const [savedTutors, setSavedTutors] = useState<SavedTutorView[]>([]);
 
   const [reviewTarget, setReviewTarget] = useState<Booking | null>(null);
   const [reviewedIds, setReviewedIds] = useState<string[]>([]);
@@ -155,10 +156,59 @@ export default function StudentDashboard() {
     fetch(`/api/auth?action=saved_tutors${token ? `&token=${token}` : ""}`)
       .then((res) => res.json())
       .then((data) => {
-        const ids: string[] = (data.savedTutors ?? []).map((s: { tutorId: string }) => s.tutorId);
+        const rows: SavedTutorView[] = (data.savedTutors ?? []).map(
+          (s: { tutorId: string; tutorName?: string; tutorAvatar?: string; tutorHeadline?: string }) => ({
+            id: s.tutorId,
+            fullName: s.tutorName || "Tutor",
+            avatarUrl: s.tutorAvatar || "",
+            headline: s.tutorHeadline || "",
+          })
+        );
+        const ids = rows.length > 0 ? rows.map((r) => r.id) : stored;
+        if (rows.length > 0) {
+          try { localStorage.setItem("tutorconnect_saved_tutors", JSON.stringify(ids)); } catch {}
+        }
         if (ids.length > 0) {
           setSavedTutorIds(ids);
-          try { localStorage.setItem("tutorconnect_saved_tutors", JSON.stringify(ids)); } catch {}
+          // Show the live tutor records (name / headline / photo) for the
+          // saved ids; fall back to the saved snapshot above for any tutor
+          // that is no longer publicly listed.
+          fetch("/api/tutors")
+            .then((res) => res.json())
+            .then((list) => {
+              const publicTutors = (list.tutors ?? []) as Array<{
+                id: string;
+                fullName: string;
+                avatarUrl: string;
+                headline: string;
+              }>;
+              const byId = new Map(publicTutors.map((t) => [t.id, t]));
+              setSavedTutors(
+                ids.map((id) => {
+                  const live = byId.get(id);
+                  if (live) {
+                    return {
+                      id,
+                      fullName: live.fullName,
+                      avatarUrl: live.avatarUrl || "",
+                      headline: live.headline || "",
+                    };
+                  }
+                  return (
+                    rows.find((r) => r.id === id) ?? {
+                      id,
+                      fullName: "Tutor",
+                      avatarUrl: "",
+                      headline: "",
+                    }
+                  );
+                })
+              );
+            })
+            .catch((err) => {
+              console.error("Could not refresh saved tutors:", err);
+              setSavedTutors(rows);
+            });
         }
       })
       .catch(() => {});
@@ -168,7 +218,7 @@ export default function StudentDashboard() {
       .then((data) => {
         const all = data.bookings ?? [];
         const userId = user?.id;
-        const filtered = userId ? all.filter((b: Booking) => !b.studentId || b.studentId === userId || b.studentId === "demo_student") : all;
+        const filtered = userId ? all.filter((b: Booking) => b.studentId === userId) : all;
         setBookings(filtered);
       })
       .finally(() => setLoading(false));
@@ -188,11 +238,10 @@ export default function StudentDashboard() {
     };
   }, [bookings]);
 
-  const savedTutors = TUTORS.filter((t) => savedTutorIds.includes(t.id));
   const completedBookings = bookings.filter((b) => b.status === "completed");
 
   async function toggleSavedTutor(id: string) {
-    const tutor = TUTORS.find((t) => t.id === id);
+    const tutor = savedTutors.find((t) => t.id === id);
     const isSaving = !savedTutorIds.includes(id);
     const newIds = isSaving ? [...savedTutorIds, id] : savedTutorIds.filter((t) => t !== id);
     setSavedTutorIds(newIds);
@@ -217,7 +266,6 @@ export default function StudentDashboard() {
                 tutorName: tutor.fullName,
                 tutorAvatar: tutor.avatarUrl,
                 tutorHeadline: tutor.headline,
-                tutorRate: tutor.hourlyRate,
               }
             : {}),
         }),
@@ -400,7 +448,7 @@ export default function StudentDashboard() {
               <LogOut size={14} /> Log out
             </button>
           </div>
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_minmax(0,1fr)]">
             {/* Sidebar */}
             <aside className="lg:sticky lg:top-24 lg:h-fit">
               <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-card">
@@ -826,11 +874,18 @@ function BookingsPanel({
   );
 }
 
+interface SavedTutorView {
+  id: string;
+  fullName: string;
+  avatarUrl: string;
+  headline: string;
+}
+
 function WishlistPanel({
   savedTutors,
   onRemove,
 }: {
-  savedTutors: typeof TUTORS;
+  savedTutors: SavedTutorView[];
   onRemove: (id: string) => void;
 }) {
   return (
@@ -847,9 +902,20 @@ function WishlistPanel({
           {savedTutors.map((t) => (
             <li key={t.id} className="flex items-center justify-between gap-3 px-6 py-4">
               <div className="flex items-center gap-3">
-                <div className="relative h-11 w-11 overflow-hidden rounded-full">
-                  <Image src={t.avatarUrl} alt={t.fullName} fill sizes="44px" className="object-cover" />
-                </div>
+                {t.avatarUrl ? (
+                  <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full">
+                    <Image src={t.avatarUrl} alt={t.fullName} fill sizes="44px" className="object-cover" />
+                  </div>
+                ) : (
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-navy-100 font-display text-xs font-bold text-navy-700">
+                    {t.fullName
+                      .split(" ")
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((w) => w[0]?.toUpperCase() ?? "")
+                      .join("") || "T"}
+                  </div>
+                )}
                 <div>
                   <p className="text-sm font-semibold text-slate-900">{t.fullName}</p>
                   <p className="text-xs text-slate-500">{t.headline}</p>
