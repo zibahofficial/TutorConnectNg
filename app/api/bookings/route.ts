@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
-import { BOOKINGS } from "@/lib/mock-data";
 import { verifyToken } from "@/lib/auth-store";
 import type { Booking } from "@/lib/types";
 
@@ -13,9 +12,14 @@ declare global {
   var __tutorconnect_bookings__: Booking[] | undefined;
 }
 
+/**
+ * In-memory fallback used only when DATABASE_URL is not configured. It starts
+ * empty on purpose — real bookings live in PostgreSQL, and inventing demo
+ * bookings would misrepresent platform activity.
+ */
 function getBookingStore(): Booking[] {
   if (!global.__tutorconnect_bookings__) {
-    global.__tutorconnect_bookings__ = [...BOOKINGS];
+    global.__tutorconnect_bookings__ = [];
   }
   return global.__tutorconnect_bookings__;
 }
@@ -64,6 +68,14 @@ export async function GET(req: NextRequest) {
           WHERE b.tutor_id = ${tutorId}
           ORDER BY b.created_at DESC LIMIT 100
         `;
+      } else if (auth.role === "tutor") {
+        // Tutors only ever see requests addressed to their own tutor profile.
+        rows = await typedSql`
+          SELECT b.*, u.full_name AS student_name
+          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          WHERE b.tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${auth.id})
+          ORDER BY b.created_at DESC LIMIT 100
+        `;
       } else if (status) {
         rows = await typedSql`
           SELECT b.*, u.full_name AS student_name
@@ -84,19 +96,23 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ source: "neon", bookings: rows });
       }
     } catch (err) {
-      console.error("Neon bookings query failed, falling back to mock data:", err);
+      console.error("Neon bookings query failed:", err);
     }
   }
 
   let results = getBookingStore();
   if (tutorId) {
-    // Tutor view: the tutor dashboard requests a specific tutor's bookings.
-    results = results.filter((b) => b.tutorId === tutorId);
+    // Only admins may read an arbitrary tutor's booking list; a tutor may only
+    // read their own (their profile id is checked server-side).
+    if (auth.role !== "admin") {
+      results = results.filter((b) => b.tutorId === auth.id);
+    } else {
+      results = results.filter((b) => b.tutorId === tutorId);
+    }
   } else if (auth.role !== "admin") {
-    // Everyone else only ever receives their own bookings (plus the shared
-    // demo/unattributed ones so demo-mode dashboards stay populated) — the
-    // studentId query param can never be used to read someone else's data.
-    results = results.filter((b) => !b.studentId || b.studentId === "demo_student" || b.studentId === auth.id);
+    // Everyone else only ever receives their own bookings — the studentId
+    // query param can never be used to read someone else's data.
+    results = results.filter((b) => b.studentId === auth.id);
   }
   if (status) results = results.filter((b) => b.status === status);
 
@@ -154,7 +170,7 @@ export async function POST(req: NextRequest) {
       `;
       return NextResponse.json({ source: "neon", booking: inserted[0] }, { status: 201 });
     } catch (err) {
-      console.error("Neon booking insert failed, falling back to in-memory store:", err);
+      console.error("Neon booking insert failed, falling back to the in-memory store:", err);
     }
   }
 

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
+import { ensureUsersAccountStatus, ensureParentProfiles } from "@/db/migrate";
 import { getUserStore, getChildStore, getSavedTutorStore, getAvailabilityStore, getDocumentStore, getVerificationStore, verifyToken, DAY_TO_INDEX, INDEX_TO_DAY, type StoredUser, type Child, type SavedTutor, type AvailabilitySlot, type TutorDocument, type TutorVerification } from "@/lib/auth-store";
 import { TUTOR_DOCUMENT_TYPE_VALUES } from "@/lib/tutor-options";
 import type { UserRole } from "@/lib/types";
@@ -157,6 +158,12 @@ export async function POST(req: NextRequest) {
 
       if (hasDatabase) {
         const typedSql = sql as unknown as SqlTag;
+        // Guarantees `users.account_status` exists (default 'pending') so a new
+        // registration is never implicitly treated as approved.
+        const accountStatusReady = await ensureUsersAccountStatus();
+        if (!accountStatusReady) {
+          console.error("users.account_status unavailable — new accounts will need review once it exists");
+        }
         const existing = await typedSql`SELECT id FROM users WHERE email = ${emailLower}`;
         if (existing.length > 0) {
           return NextResponse.json({ error: "Email already registered." }, { status: 409 });
@@ -170,6 +177,7 @@ export async function POST(req: NextRequest) {
         const user = userRow as Record<string, unknown>;
 
         if (role === "parent") {
+          await ensureParentProfiles();
           await typedSql`
             INSERT INTO parent_profiles (
               user_id, child_name, child_age, educational_level, tutor_budget, learning_mode, terms_agreed_at
@@ -441,11 +449,37 @@ export async function POST(req: NextRequest) {
       if (auth instanceof NextResponse) return auth;
 
       if (hasDatabase) {
+        const typedSql = sql as unknown as SqlTag;
+        const accountStatusReady = await ensureUsersAccountStatus();
         try {
-          const typedSql = sql as unknown as SqlTag;
+          // Prefer the real account_status column...
+          if (accountStatusReady) {
+            const rows = await typedSql`
+              SELECT id, email, full_name, role, phone, city, state, avatar_url, is_active,
+                     -- Admin accounts are always reported as approved: they are the
+                     -- reviewers, and the API refuses to move an admin off approved.
+                     CASE WHEN role = 'admin' THEN 'approved' ELSE account_status END AS account_status,
+                     (SELECT tv.status FROM tutor_verifications tv WHERE tv.user_id = users.id) AS verification_status,
+                     (SELECT tp.is_verified FROM tutor_profiles tp WHERE tp.user_id = users.id) AS is_verified,
+                     created_at
+              FROM users
+              ORDER BY created_at DESC LIMIT 200
+            `;
+            return NextResponse.json({ source: "neon", users: rows });
+          }
+          // ...otherwise still return the real users, marked as not yet reviewed.
           const rows = await typedSql`
-            SELECT id, email, full_name, role, phone, city, state, avatar_url, is_active, created_at FROM users ORDER BY created_at DESC LIMIT 100
+            SELECT id, email, full_name, role, phone, city, state, avatar_url, is_active,
+                   NULL AS account_status,
+                   (SELECT tv.status FROM tutor_verifications tv WHERE tv.user_id = users.id) AS verification_status,
+                   (SELECT tp.is_verified FROM tutor_profiles tp WHERE tp.user_id = users.id) AS is_verified,
+                   created_at
+            FROM users
+            ORDER BY created_at DESC LIMIT 200
           `;
+          console.warn(
+            "admin_list_users: account_status column unavailable; statuses shown as pending until it exists."
+          );
           return NextResponse.json({ source: "neon", users: rows });
         } catch (err) {
           console.error("Neon user list failed:", err);
@@ -453,7 +487,16 @@ export async function POST(req: NextRequest) {
       }
 
       const store = getUserStore();
-      const users = Array.from(store.values()).map((u) => ({ id: u.id, email: u.email, full_name: u.fullName, role: u.role, phone: u.phone, city: u.city, state: u.state, avatar_url: u.avatarUrl, is_active: true, created_at: u.createdAt }));
+      const users = Array.from(store.values()).map((u) => ({
+        id: u.id, email: u.email, full_name: u.fullName, role: u.role,
+        phone: u.phone, city: u.city, state: u.state, avatar_url: u.avatarUrl,
+        is_active: true,
+        // No database configured: nothing has been admin-reviewed here.
+        account_status: u.role === "admin" ? "approved" : "pending",
+        verification_status: null,
+        is_verified: false,
+        created_at: u.createdAt,
+      }));
       return NextResponse.json({ source: "mock", users });
     }
 
@@ -465,28 +508,228 @@ export async function POST(req: NextRequest) {
       if (!targetEmail) return NextResponse.json({ error: "Target email is required." }, { status: 400 });
 
       const store = getUserStore();
-      const target = store.get(targetEmail);
-      if (!target) return NextResponse.json({ error: "User not found." }, { status: 404 });
-      if (target.role === "admin") return NextResponse.json({ error: "Cannot delete an admin account." }, { status: 403 });
+      let targetId = store.get(targetEmail)?.id ?? "";
+      let targetRole = store.get(targetEmail)?.role ?? "";
+
+      if (hasDatabase && (!targetId || !targetRole)) {
+        // The account may live only in PostgreSQL (the normal production case).
+        try {
+          const typedSql = sql as unknown as SqlTag;
+          const rows = await typedSql`
+            SELECT id, role FROM users WHERE email = ${targetEmail} LIMIT 1
+          `;
+          const row = rows[0] as Record<string, unknown> | undefined;
+          if (row) {
+            targetId = String(row.id);
+            targetRole = String(row.role);
+          }
+        } catch (err) {
+          console.error("Neon user lookup failed during delete:", err);
+          return NextResponse.json({ error: "Could not delete the user right now. Please try again." }, { status: 500 });
+        }
+      }
+
+      if (!targetId) return NextResponse.json({ error: "User not found." }, { status: 404 });
+      if (targetRole === "admin") return NextResponse.json({ error: "Cannot delete an admin account." }, { status: 403 });
 
       store.delete(targetEmail);
 
       if (hasDatabase) {
         try {
           const typedSql = sql as unknown as SqlTag;
-          await typedSql`DELETE FROM bookings WHERE student_id = ${target.id}`;
-          await typedSql`DELETE FROM reviews WHERE student_id = ${target.id}`;
-          await typedSql`DELETE FROM tutor_availability WHERE tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${target.id})`;
-          await typedSql`DELETE FROM tutor_subjects WHERE tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${target.id})`;
-          await typedSql`DELETE FROM tutor_profiles WHERE user_id = ${target.id}`;
-          await typedSql`DELETE FROM parent_profiles WHERE user_id = ${target.id}`;
-          await typedSql`DELETE FROM users WHERE id = ${target.id}`;
+          await typedSql`DELETE FROM bookings WHERE student_id = ${targetId}`;
+          await typedSql`DELETE FROM reviews WHERE student_id = ${targetId}`;
+          await typedSql`DELETE FROM tutor_availability WHERE tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${targetId})`;
+          await typedSql`DELETE FROM tutor_subjects WHERE tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${targetId})`;
+          await typedSql`DELETE FROM tutor_documents WHERE user_id = ${targetId}`;
+          await typedSql`DELETE FROM tutor_verifications WHERE user_id = ${targetId}`;
+          await typedSql`DELETE FROM tutor_profiles WHERE user_id = ${targetId}`;
+          await typedSql`DELETE FROM parent_profiles WHERE user_id = ${targetId}`;
+          await typedSql`DELETE FROM users WHERE id = ${targetId}`;
         } catch (err) {
           console.error("Neon user deletion failed:", err);
+          return NextResponse.json({ error: "Could not delete the user right now. Please try again." }, { status: 500 });
         }
       }
 
       return NextResponse.json({ success: true });
+    }
+
+    if (action === "admin_update_user_status") {
+      const auth = await getUserFromRequest(req, ["admin"]);
+      if (auth instanceof NextResponse) return auth;
+
+      const targetId = (body.targetId as string) || "";
+      const status = (body.status as string) || "";
+      const ALLOWED = ["pending", "approved", "rejected", "suspended"];
+      if (!targetId) return NextResponse.json({ error: "targetId is required." }, { status: 400 });
+      if (!ALLOWED.includes(status)) {
+        return NextResponse.json({ error: "status must be one of: pending, approved, rejected, suspended." }, { status: 400 });
+      }
+      if (targetId === auth.user.id) {
+        return NextResponse.json({ error: "You cannot change your own account status." }, { status: 400 });
+      }
+
+      if (!hasDatabase) {
+        return NextResponse.json({ error: "Account review requires the database to be configured." }, { status: 503 });
+      }
+
+      const typedSql = sql as unknown as SqlTag;
+      const accountStatusReady = await ensureUsersAccountStatus();
+      if (!accountStatusReady) {
+        return NextResponse.json(
+          { error: "The account_status column is not available in the database, so this review could not be saved." },
+          { status: 503 }
+        );
+      }
+      const updated = await typedSql`
+        UPDATE users SET account_status = ${status} WHERE id = ${targetId}
+        RETURNING id, email, full_name, role, account_status
+      `;
+      if (updated.length === 0) {
+        return NextResponse.json({ error: "User not found." }, { status: 404 });
+      }
+      const target = updated[0] as Record<string, unknown>;
+      if (target.role === "admin" && status !== "approved") {
+        // Never lock an administrator out of the panel.
+        await typedSql`UPDATE users SET account_status = 'approved' WHERE id = ${targetId}`;
+        return NextResponse.json({ error: "Admin accounts must stay approved." }, { status: 400 });
+      }
+
+      // Approving an account here only approves the account itself: credential
+      // verification stays a separate, explicit step (Credential Applications /
+      // Tutor Verification Queue) so nobody is shown as verified without their
+      // documents being reviewed. Rejecting or suspending a tutor does remove
+      // them from the public listings immediately.
+      if (target.role === "tutor") {
+        if (status === "rejected") {
+          await typedSql`
+            UPDATE tutor_profiles SET verification_status = 'rejected', is_verified = FALSE
+            WHERE user_id = ${targetId}
+          `;
+          await typedSql`
+            INSERT INTO tutor_verifications (user_id, status, applied_at, reviewed_at)
+            VALUES (${targetId}, 'declined', NOW(), NOW())
+            ON CONFLICT (user_id) DO UPDATE SET status = 'declined', reviewed_at = NOW()
+          `;
+        } else if (status === "suspended") {
+          await typedSql`
+            UPDATE tutor_profiles SET verification_status = 'suspended', is_verified = FALSE
+            WHERE user_id = ${targetId}
+          `;
+        }
+      }
+
+      return NextResponse.json({ success: true, user: target });
+    }
+
+    if (action === "admin_list_tutors") {
+      const auth = await getUserFromRequest(req, ["admin"]);
+      if (auth instanceof NextResponse) return auth;
+
+      if (!hasDatabase) {
+        return NextResponse.json({
+          source: "none",
+          tutors: [],
+          hint: "No database is configured, so no tutor profiles can be listed.",
+        });
+      }
+
+      const accountStatusReady = await ensureUsersAccountStatus();
+      const typedSql = sql as unknown as SqlTag;
+      // Two literal variants (never interpolate SQL text as a query parameter).
+      if (accountStatusReady) {
+        const rows = await typedSql`
+          SELECT
+            tp.id AS tutor_profile_id,
+            tp.user_id,
+            tp.headline,
+            tp.bio,
+            tp.hourly_rate,
+            tp.currency,
+            tp.years_experience,
+            tp.rating_avg,
+            tp.total_reviews,
+            tp.total_sessions,
+            tp.is_verified,
+            tp.verification_status,
+            tp.created_at,
+            u.full_name,
+            u.email,
+            u.avatar_url,
+            u.city,
+            u.state,
+            u.account_status,
+            u.created_at AS joined_at,
+            EXISTS (
+              SELECT 1 FROM tutor_documents d
+              WHERE d.user_id = tp.user_id AND d.doc_type = 'Government-issued ID'
+            ) AS id_card_uploaded,
+            EXISTS (
+              SELECT 1 FROM tutor_documents d
+              WHERE d.user_id = tp.user_id AND d.doc_type = 'Academic credential'
+            ) AS degree_uploaded,
+            COALESCE(
+              (SELECT array_agg(ts.subject_name ORDER BY ts.subject_name)
+               FROM tutor_subjects ts WHERE ts.tutor_id = tp.id),
+              '{}'
+            ) AS subjects
+          FROM tutor_profiles tp
+          JOIN users u ON u.id = tp.user_id
+          ORDER BY
+            CASE WHEN tp.verification_status = 'pending' THEN 0 ELSE 1 END,
+            tp.created_at DESC
+          LIMIT 200
+        `;
+        return NextResponse.json({ source: "neon", tutors: rows });
+      }
+
+      // account_status column not available yet: still return the real tutor
+      // profiles, with the review state reported as not-yet-reviewed.
+      console.warn("admin_list_tutors: account_status column unavailable; statuses shown as pending.");
+      const rows = await typedSql`
+        SELECT
+          tp.id AS tutor_profile_id,
+          tp.user_id,
+          tp.headline,
+          tp.bio,
+          tp.hourly_rate,
+          tp.currency,
+          tp.years_experience,
+          tp.rating_avg,
+          tp.total_reviews,
+          tp.total_sessions,
+          tp.is_verified,
+          tp.verification_status,
+          tp.created_at,
+          u.full_name,
+          u.email,
+          u.avatar_url,
+          u.city,
+          u.state,
+          NULL::text AS account_status,
+          u.created_at AS joined_at,
+          EXISTS (
+            SELECT 1 FROM tutor_documents d
+            WHERE d.user_id = tp.user_id AND d.doc_type = 'Government-issued ID'
+          ) AS id_card_uploaded,
+          EXISTS (
+            SELECT 1 FROM tutor_documents d
+            WHERE d.user_id = tp.user_id AND d.doc_type = 'Academic credential'
+          ) AS degree_uploaded,
+          COALESCE(
+            (SELECT array_agg(ts.subject_name ORDER BY ts.subject_name)
+             FROM tutor_subjects ts WHERE ts.tutor_id = tp.id),
+            '{}'
+          ) AS subjects
+        FROM tutor_profiles tp
+        JOIN users u ON u.id = tp.user_id
+        ORDER BY
+          CASE WHEN tp.verification_status = 'pending' THEN 0 ELSE 1 END,
+          tp.created_at DESC
+        LIMIT 200
+      `;
+      return NextResponse.json({ source: "neon", tutors: rows });
     }
 
     if (action === "admin_update_tutor_status") {
@@ -494,22 +737,53 @@ export async function POST(req: NextRequest) {
       if (auth instanceof NextResponse) return auth;
 
       const targetId = (body.targetId as string) || "";
-      const isVerified = body.isVerified === true;
+      // `status` is the workflow value (approved / rejected / suspended /
+      // pending). `isVerified` is still accepted for backwards compatibility.
+      const requested = (body.status as string) || (body.isVerified === true ? "approved" : body.isVerified === false ? "pending" : "");
+      const PROFILE_STATUS: Record<string, { profile: string; verified: boolean; account: string; verification: string | null }> = {
+        approved: { profile: "approved", verified: true, account: "approved", verification: "approved" },
+        rejected: { profile: "rejected", verified: false, account: "rejected", verification: "declined" },
+        suspended: { profile: "suspended", verified: false, account: "suspended", verification: null },
+        pending: { profile: "pending", verified: false, account: "pending", verification: "pending" },
+      };
+      const next = PROFILE_STATUS[requested];
       if (!targetId) return NextResponse.json({ error: "targetId is required." }, { status: 400 });
-
-      if (hasDatabase) {
-        try {
-          const typedSql = sql as unknown as SqlTag;
-          await typedSql`
-            UPDATE tutor_profiles SET is_verified = ${isVerified}, verification_status = ${isVerified ? "approved" : "pending"}
-            WHERE user_id = ${targetId}
-          `;
-        } catch (err) {
-          console.error("Neon tutor status update failed:", err);
-        }
+      if (!next) {
+        return NextResponse.json({ error: "status must be one of: approved, rejected, suspended, pending." }, { status: 400 });
       }
 
-      return NextResponse.json({ success: true, isVerified });
+      if (!hasDatabase) {
+        return NextResponse.json({ error: "Tutor review requires the database to be configured." }, { status: 503 });
+      }
+
+      const typedSql = sql as unknown as SqlTag;
+      const accountStatusReady = await ensureUsersAccountStatus();
+      const updated = await typedSql`
+        UPDATE tutor_profiles
+        SET is_verified = ${next.verified}, verification_status = ${next.profile}
+        WHERE user_id = ${targetId}
+        RETURNING id
+      `;
+      if (updated.length === 0) {
+        return NextResponse.json({ error: "Tutor profile not found." }, { status: 404 });
+      }
+
+      if (accountStatusReady) {
+        await typedSql`
+          UPDATE users SET account_status = ${next.account} WHERE id = ${targetId} AND role <> 'admin'
+        `;
+      } else {
+        console.warn("admin_update_tutor_status: account_status column unavailable; tutor_profiles updated only.");
+      }
+      if (next.verification) {
+        await typedSql`
+          INSERT INTO tutor_verifications (user_id, status, applied_at, reviewed_at)
+          VALUES (${targetId}, ${next.verification}, NOW(), NOW())
+          ON CONFLICT (user_id) DO UPDATE SET status = ${next.verification}, reviewed_at = NOW()
+        `;
+      }
+
+      return NextResponse.json({ success: true, status: next.profile, isVerified: next.verified });
     }
 
     if (action === "add_document") {
@@ -694,6 +968,16 @@ export async function POST(req: NextRequest) {
             UPDATE tutor_profiles SET verification_status = ${profileStatus}, is_verified = ${decision === "approved"}
             WHERE user_id = ${userId}
           `;
+          // ...and mirror the outcome onto the account review status so the
+          // admin User Management table can never disagree with this screen.
+          if (await ensureUsersAccountStatus()) {
+            await typedSql`
+              UPDATE users SET account_status = ${decision === "approved" ? "approved" : "rejected"}
+              WHERE id = ${userId} AND role <> 'admin'
+            `;
+          } else {
+            console.warn("review_verification: account_status column unavailable; tutor_profiles updated only.");
+          }
         } catch (err) {
           console.error("Neon verification review failed:", err);
         }

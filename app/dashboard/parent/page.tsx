@@ -173,7 +173,7 @@ export default function ParentDashboard() {
         const all: Booking[] = data.bookings ?? [];
         const userId = user?.id;
         const filtered = userId
-          ? all.filter((b) => !b.studentId || b.studentId === userId || b.studentId === "demo_student")
+          ? all.filter((b) => b.studentId === userId)
           : all;
         setBookings(filtered);
       })
@@ -463,7 +463,7 @@ export default function ParentDashboard() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_minmax(0,1fr)]">
             <aside className="lg:sticky lg:top-24 lg:h-fit">
               <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-card">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-navy-700 to-navy-600 font-display text-lg font-extrabold text-white">

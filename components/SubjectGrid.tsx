@@ -14,7 +14,7 @@ import {
   ArrowUpRight,
   type LucideIcon,
 } from "lucide-react";
-import { SUBJECT_CARDS } from "@/lib/mock-data";
+import { SUBJECT_CARDS } from "@/lib/site-config";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Sigma,
@@ -89,7 +89,7 @@ export default function SubjectGrid() {
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                       <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
                     </span>
-                    {subject.tutorCount} Available Tutors
+                    Browse subject
                   </span>
                   <ArrowUpRight
                     size={18}

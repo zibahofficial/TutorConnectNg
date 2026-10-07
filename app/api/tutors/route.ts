@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hasDatabase, sql } from "@/db/neon";
-import { TUTORS } from "@/lib/mock-data";
+import { fetchApprovedTutors } from "@/db/tutors";
+import { hasDatabase } from "@/db/neon";
 import type { Tutor } from "@/lib/types";
 
 export const runtime = "nodejs";
+// Tutor listings must always reflect the live database (a tutor approved a
+// minute ago should appear immediately), never a cached build-time result.
+export const dynamic = "force-dynamic";
 
-function filterMockTutors(params: URLSearchParams): Tutor[] {
-  let results = [...TUTORS];
+/**
+ * Applies the public listing filters to a list of real database tutors.
+ * Only admin-verified tutors ever reach this point — the query itself
+ * restricts results to `tutor_profiles.is_verified = TRUE`.
+ */
+function applyFilters(tutors: Tutor[], params: URLSearchParams): Tutor[] {
+  let results = [...tutors];
 
   const search = params.get("search")?.toLowerCase().trim();
   if (search) {
@@ -20,7 +28,12 @@ function filterMockTutors(params: URLSearchParams): Tutor[] {
 
   const subject = params.get("subject");
   if (subject && subject !== "All") {
-    results = results.filter((t) => t.subjectCategory === subject);
+    const needle = subject.toLowerCase();
+    results = results.filter(
+      (t) =>
+        t.subjects.some((s) => s.toLowerCase().includes(needle)) ||
+        t.subjectCategory === subject
+    );
   }
 
   const location = params.get("location");
@@ -28,16 +41,17 @@ function filterMockTutors(params: URLSearchParams): Tutor[] {
     if (location.startsWith("Online")) {
       results = results.filter((t) => t.isOnline);
     } else {
-      results = results.filter((t) =>
-        `${t.area} ${t.state}`.toLowerCase().includes(location.split("(")[0].trim().toLowerCase())
-      );
+      const needle = location.split("(")[0].trim().toLowerCase();
+      results = results.filter((t) => `${t.area} ${t.state}`.toLowerCase().includes(needle));
     }
   }
 
   const minRate = params.get("minRate");
   const maxRate = params.get("maxRate");
   if (minRate) results = results.filter((t) => t.hourlyRate >= Number(minRate));
-  if (maxRate) results = results.filter((t) => t.hourlyRate <= Number(maxRate));
+  if (maxRate && Number(maxRate) < Number.MAX_SAFE_INTEGER) {
+    results = results.filter((t) => t.hourlyRate <= Number(maxRate));
+  }
 
   const curriculum = params.get("curriculum");
   if (curriculum && curriculum !== "All") {
@@ -77,32 +91,14 @@ function filterMockTutors(params: URLSearchParams): Tutor[] {
 }
 
 export async function GET(req: NextRequest) {
-  const params = req.nextUrl.searchParams;
-
-  // Attempt live Neon Postgres query first; gracefully fall back to the
-  // curated mock dataset (used for local/demo environments or if the
-  // `tutor_profiles` table has not been seeded with production data yet).
-  if (hasDatabase) {
-    try {
-      const rows = await (sql as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>)`
-        SELECT
-          u.id, u.full_name, u.avatar_url, u.city, u.state,
-          tp.id AS tutor_profile_id, tp.bio, tp.headline, tp.hourly_rate,
-          tp.currency, tp.years_experience, tp.curriculum, tp.rating_avg,
-          tp.total_reviews, tp.is_verified
-        FROM tutor_profiles tp
-        JOIN users u ON u.id = tp.user_id
-        ORDER BY tp.rating_avg DESC
-        LIMIT 50
-      `;
-      if (rows && rows.length > 0) {
-        return NextResponse.json({ source: "neon", tutors: rows });
-      }
-    } catch (err) {
-      console.error("Neon query failed, falling back to mock data:", err);
-    }
+  if (!hasDatabase) {
+    console.error(
+      "GET /api/tutors: DATABASE_URL is not configured, so no tutors can be listed."
+    );
+    return NextResponse.json({ source: "none", tutors: [] });
   }
 
-  const tutors = filterMockTutors(params);
-  return NextResponse.json({ source: "mock", tutors });
+  const params = req.nextUrl.searchParams;
+  const all = await fetchApprovedTutors();
+  return NextResponse.json({ source: "neon", tutors: applyFilters(all, params) });
 }

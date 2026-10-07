@@ -14,7 +14,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import TutorCard from "@/components/TutorCard";
-import { STATES, SUBJECT_FILTERS, CURRICULA } from "@/lib/mock-data";
+import { STATES, SUBJECT_FILTERS, CURRICULA } from "@/lib/site-config";
 import type { Tutor } from "@/lib/types";
 
 const DAY_OPTIONS = ["All", "Weekdays", "Weekends"];
@@ -88,6 +88,15 @@ function TutorsPageInner() {
       active = false;
     };
   }, [queryString]);
+
+  const filtersActive =
+    subject !== "All" ||
+    location !== "All" ||
+    maxRate < MAX_BUDGET ||
+    day !== "All" ||
+    curriculum !== "All" ||
+    verifiedOnly ||
+    search.trim().length > 0;
 
   function resetFilters() {
     setSubject("All");
@@ -260,7 +269,7 @@ function TutorsPageInner() {
           </div>
         </div>
 
-        <div className="container-app grid grid-cols-1 gap-8 py-10 lg:grid-cols-[280px_1fr]">
+        <div className="container-app grid grid-cols-1 gap-8 py-10 lg:grid-cols-[280px_minmax(0,1fr)]">
           {/* Desktop sidebar */}
           <aside className="hidden lg:block">
             <div className="sticky top-24 rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
@@ -288,15 +297,18 @@ function TutorsPageInner() {
               <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-20 text-center">
                 <MapPin size={36} className="mb-3 text-slate-300" />
                 <h3 className="font-display text-lg font-bold text-slate-700">
-                  No tutors match these filters
+                  {filtersActive ? "No tutors match these filters" : "No approved tutors yet"}
                 </h3>
                 <p className="mt-1 max-w-sm text-sm text-slate-400">
-                  Try widening your budget range or choosing a different
-                  location / subject.
+                  {filtersActive
+                    ? "Try widening your budget range or choosing a different location / subject."
+                    : "Tutors appear here once they register and an admin has verified their profile."}
                 </p>
-                <button onClick={resetFilters} className="btn-primary mt-5 !px-6 !py-2.5 text-sm">
-                  Reset Filters
-                </button>
+                {filtersActive && (
+                  <button onClick={resetFilters} className="btn-primary mt-5 !px-6 !py-2.5 text-sm">
+                    Reset Filters
+                  </button>
+                )}
               </div>
             ) : (
               <motion.div

@@ -4,9 +4,8 @@
  * Uses @neondatabase/serverless so queries work over HTTP fetch in Vercel's
  * Edge/Serverless runtime (no TCP socket pooling required).
  *
- * In local/demo environments where DATABASE_URL is not configured, API
- * routes fall back to the in-memory mock dataset in `lib/mock-data.ts` so the
- * product remains fully explorable without a live database.
+ * When DATABASE_URL is not configured the API routes degrade to explicit
+ * empty states (never fabricated data) so missing configuration is obvious.
  */
 import { neon } from "@neondatabase/serverless";
 

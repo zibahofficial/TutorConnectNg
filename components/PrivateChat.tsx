@@ -162,7 +162,7 @@ export default function PrivateChat({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-[240px_1fr]">
+      <div className="grid min-w-0 grid-cols-1 sm:grid-cols-[240px_minmax(0,1fr)]">
         {/* Conversation list + new chat picker */}
         <div className={`border-slate-100 p-3 sm:border-r ${active ? "hidden sm:block" : "block"}`}>
           {pickerChoices.length > 0 && (
@@ -209,7 +209,7 @@ export default function PrivateChat({
         </div>
 
         {/* Thread */}
-        <div className={`flex flex-col ${minThreadHeight} ${active ? "flex" : "hidden sm:flex"}`}>
+        <div className={`flex min-w-0 flex-col ${minThreadHeight} ${active ? "flex" : "hidden sm:flex"}`}>
           {active ? (
             <>
               <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
@@ -247,7 +247,7 @@ export default function PrivateChat({
                             mine ? "rounded-br-md bg-navy-700 text-white" : "rounded-bl-md bg-slate-100 text-slate-800"
                           }`}
                         >
-                          <p>{m.body}</p>
+                          <p className="whitespace-pre-wrap break-words">{m.body}</p>
                           <p className={`mt-1 text-[10px] ${mine ? "text-navy-200" : "text-slate-400"}`}>
                             {mine ? "You" : m.senderName} ·{" "}
                             {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}

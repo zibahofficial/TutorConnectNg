@@ -29,8 +29,8 @@ and **Neon Serverless Postgres**.
   - **Admin** — review ID/degree verification uploads, approve/suspend tutors,
     monitor booking metrics & disputes.
 - **Neon Serverless Postgres** schema with triggers to auto-update tutor
-  rating averages, and graceful **mock-data fallback** so the app is fully
-  explorable even before a database is connected.
+  rating averages, plus explicit empty states (never fabricated data) when the
+  database has nothing to show yet.
 
 ---
 
@@ -62,7 +62,7 @@ tutorconnect-ng/
 │   └── neon.ts             # Neon serverless SQL client
 ├── lib/
 │   ├── types.ts            # Shared TypeScript domain types
-│   ├── mock-data.ts        # Demo tutors/bookings/subjects (fallback dataset)
+│   ├── site-config.ts      # Static filter taxonomies & marketing copy (no data)
 │   └── auth-store.ts       # In-memory auth fallback (used without a DB)
 ├── app/
 │   ├── layout.tsx
@@ -112,10 +112,9 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-> **No database configured?** The app automatically falls back to a curated
-> in-memory mock dataset (`lib/mock-data.ts`) for tutors and bookings, and an
-> in-memory user store for auth — so every page, filter, and booking flow is
-> fully functional for demos without any setup.
+> **No database configured?** Auth and chat fall back to an in-memory store,
+> while tutor, booking and verification screens show explicit empty states —
+> tutors and bookings are never fabricated. Set `DATABASE_URL` to use real records.
 
 ---
 
@@ -139,16 +138,26 @@ Open [http://localhost:3000](http://localhost:3000).
 5. Once `DATABASE_URL` is present, `app/api/tutors/route.ts` and
    `app/api/bookings/route.ts` automatically query Neon directly (via
    `db/neon.ts`, built on `@neondatabase/serverless` for HTTP-based edge/
-   serverless-friendly connections) instead of the mock dataset. Auth routes
+   serverless-friendly connections). Auth routes
    behave the same way — signup/login will persist real rows to `users`.
 
-### Seeding demo tutors (optional)
+### How tutors become publicly visible
 
-`db/schema.sql` does not seed any accounts. To populate realistic tutor
-profiles for demos, insert rows into `users` (role = `'tutor'`) and
-`tutor_profiles` / `tutor_subjects` / `tutor_availability` using the shapes
-documented in the schema — or adapt the objects in `lib/mock-data.ts` into
-`INSERT` statements.
+`db/schema.sql` does not seed any accounts. A tutor appears on the homepage and
+in `/tutors` only after they register through the site **and** an admin approves
+them (Admin → Credential Applications / Tutor Verification Queue):
+
+- every registration is created with `users.account_status = 'pending'` and
+  `tutor_profiles.verification_status = 'pending'` — registration alone never
+  makes an account approved or verified;
+- an admin approves, rejects, or suspends an account from User Management, and
+  verifies credentials from the verification queue;
+- only `tutor_profiles.is_verified = TRUE` profiles are returned by
+  `db/tutors.ts`, so unapproved tutors are never exposed publicly.
+
+`users.account_status` is added non-destructively by
+`db/migrations/0001_users_account_status.sql` (also applied automatically on
+first use — see `db/migrate.ts`).
 
 ---
 

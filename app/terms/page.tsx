@@ -58,7 +58,7 @@ export default function TermsOfServicePage() {
         </section>
 
         <section className="py-12 sm:py-16">
-          <div className="container-app grid grid-cols-1 gap-10 lg:grid-cols-[260px_1fr]">
+          <div className="container-app grid grid-cols-1 gap-10 lg:grid-cols-[260px_minmax(0,1fr)]">
             {/* Table of contents */}
             <aside className="hidden lg:block">
               <div className="sticky top-24 rounded-2xl border border-slate-200 bg-white p-5 shadow-card">

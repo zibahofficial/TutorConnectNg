@@ -44,7 +44,7 @@ export default function BookingModal({
   initialSlot?: Tutor["availability"][number] | null;
 }) {
   const [grade, setGrade] = useState(GRADE_LEVELS[2]);
-  const [subject, setSubject] = useState(tutor.subjects[0]);
+  const [subject, setSubject] = useState(tutor.subjects[0] ?? "");
   const [date, setDate] = useState("");
   const [slot, setSlot] = useState<AvailabilitySlot | null>(
     initialSlot ?? tutor.availability[0] ?? null

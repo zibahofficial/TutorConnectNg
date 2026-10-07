@@ -12,7 +12,18 @@ export type SessionMode = "online" | "in_person";
 export type Curriculum =
   | "Nigerian National"
   | "British Cambridge"
-  | "American";
+  | "American"
+  | "Other";
+
+/**
+ * Account review lifecycle stored in `users.account_status`.
+ * Every registration starts as "pending" — only an admin can approve,
+ * reject, or suspend an account.
+ */
+export type AccountStatus = "pending" | "approved" | "rejected" | "suspended";
+
+/** Credential-review lifecycle stored in `tutor_profiles.verification_status`. */
+export type VerificationStatus = "pending" | "approved" | "rejected" | "suspended";
 
 export interface AvailabilitySlot {
   day: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
@@ -31,6 +42,7 @@ export interface Review {
 export interface Tutor {
   id: string;
   fullName: string;
+  /** Empty string when the tutor has not uploaded a profile photo. */
   avatarUrl: string;
   headline: string;
   bio: string;
@@ -44,6 +56,7 @@ export interface Tutor {
   curriculum: Curriculum;
   subjects: string[];
   subjectCategory:
+    | "All"
     | "Maths"
     | "Sciences"
     | "Tech"
@@ -83,7 +96,6 @@ export interface SubjectCard {
   title: string;
   description: string;
   icon: string;
-  tutorCount: number;
   accent: string;
 }
 
