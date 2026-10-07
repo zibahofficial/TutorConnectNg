@@ -61,8 +61,7 @@ export default function PrivateChat({
   useEffect(() => {
     if (!myKey) return;
     let active = true;
-    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
-    fetch(`/api/messages?conversations=1${qs}`, { headers: authHeaders })
+    fetch("/api/messages?conversations=1", { headers: authHeaders })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Could not load conversations.");
@@ -81,7 +80,7 @@ export default function PrivateChat({
       });
 
     if (pickerFetchAction) {
-      fetch(`/api/auth?action=${pickerFetchAction}${qs}`, { headers: authHeaders })
+      fetch(`/api/auth?action=${encodeURIComponent(pickerFetchAction)}`, { headers: authHeaders })
         .then(async (res) => {
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || "Could not load chat contacts.");
@@ -107,8 +106,7 @@ export default function PrivateChat({
   useEffect(() => {
     if (!myKey || !active) return;
     let alive = true;
-    const qs =
-      (token ? `&token=${encodeURIComponent(token)}` : "") + `&with=${encodeURIComponent(active.key)}`;
+    const qs = `with=${encodeURIComponent(active.key)}`;
     const load = () =>
       fetch(`/api/messages?${qs}`, { headers: authHeaders })
         .then(async (res) => {
