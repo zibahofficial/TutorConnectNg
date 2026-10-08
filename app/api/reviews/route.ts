@@ -77,11 +77,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Tutor not found." }, { status: 404 });
       }
       const inserted = await typedSql`
-        INSERT INTO reviews (booking_id, student_id, tutor_id, student_name, rating, comment)
-        VALUES (NULL, ${auth.id}, ${tutorId}, ${reviewerName}, ${rating}, ${comment})
-        RETURNING id, booking_id, student_id, tutor_id, student_name, rating, comment, created_at
+        INSERT INTO reviews (booking_id, student_id, tutor_id, rating, comment)
+        VALUES (NULL, ${auth.id}, ${tutorId}, ${rating}, ${comment})
+        RETURNING id, booking_id, student_id, tutor_id, rating, comment, created_at
       `;
-      return NextResponse.json({ source: "neon", review: inserted[0] }, { status: 201 });
+      // The reviewer's name is not stored on the row — it is always resolved
+      // through reviews.student_id -> users.id -> users.full_name.
+      return NextResponse.json(
+        { source: "neon", review: { ...inserted[0], student_name: reviewerName } },
+        { status: 201 }
+      );
     }
 
     // Students and parents review their own completed bookings.
@@ -124,12 +129,16 @@ export async function POST(req: NextRequest) {
     }
 
     const inserted = await typedSql`
-      INSERT INTO reviews (booking_id, student_id, tutor_id, student_name, rating, comment)
-      VALUES (${bookingId}, ${auth.id}, ${booking.tutor_id}, ${reviewerName}, ${rating}, ${comment})
-      RETURNING id, booking_id, student_id, tutor_id, student_name, rating, comment, created_at
+      INSERT INTO reviews (booking_id, student_id, tutor_id, rating, comment)
+      VALUES (${bookingId}, ${auth.id}, ${booking.tutor_id}, ${rating}, ${comment})
+      RETURNING id, booking_id, student_id, tutor_id, rating, comment, created_at
     `;
 
-    return NextResponse.json({ source: "neon", review: inserted[0] }, { status: 201 });
+    // Same here: the display name comes from the users table, not the row.
+    return NextResponse.json(
+      { source: "neon", review: { ...inserted[0], student_name: reviewerName } },
+      { status: 201 }
+    );
   } catch (err) {
     const code = (err as { code?: string } | null)?.code;
     if (code === "23505") {
@@ -179,10 +188,12 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = await typedSql`
-      SELECT id, booking_id, student_id, tutor_id, rating, comment, created_at
-      FROM reviews
-      WHERE tutor_id = ${tutorId}
-      ORDER BY created_at DESC
+      SELECT r.id, r.booking_id, r.student_id, r.tutor_id, r.rating, r.comment, r.created_at,
+             u.full_name AS student_name
+      FROM reviews r
+      LEFT JOIN users u ON u.id = r.student_id
+      WHERE r.tutor_id = ${tutorId}
+      ORDER BY r.created_at DESC
     `;
     return NextResponse.json({ source: "neon", reviews: rows });
   } catch (err) {

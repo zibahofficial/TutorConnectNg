@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenCheck,
@@ -23,6 +23,35 @@ const GRADE_LEVELS = [
   "Undergraduate",
   "Adult Learner",
 ];
+
+/** JS Date.getDay() (0 = Sunday) → the day labels used by availability slots. */
+const DAY_LABELS: AvailabilitySlot["day"][] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const FULL_DAY_NAMES: Record<AvailabilitySlot["day"], string> = {
+  Mon: "Mondays",
+  Tue: "Tuesdays",
+  Wed: "Wednesdays",
+  Thu: "Thursdays",
+  Fri: "Fridays",
+  Sat: "Saturdays",
+  Sun: "Sundays",
+};
+
+/**
+ * "YYYY-MM-DD" → the weekday label of that date. Parsed as a local date (not
+ * via Date.parse, which treats the string as UTC and can shift the weekday).
+ */
+function dayLabelForDate(value: string): AvailabilitySlot["day"] | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(parsed.getTime())) return null;
+  return DAY_LABELS[parsed.getDay()];
+}
+
+function sameSlot(a: AvailabilitySlot | null, b: AvailabilitySlot | null) {
+  return !!a && !!b && a.day === b.day && a.start === b.start && a.end === b.end;
+}
 
 function formatNaira(amount: number) {
   return new Intl.NumberFormat("en-NG", {
@@ -68,6 +97,29 @@ export default function BookingModal({
     }
   }, [open, initialSlot, tutor.availability]);
 
+  // Availability is weekly, so only the slots that fall on the weekday of the
+  // chosen date can actually be booked. Before a date is picked the full
+  // weekly list stays visible.
+  const selectedDay = dayLabelForDate(date);
+  const slotsForDay = useMemo(
+    () =>
+      selectedDay
+        ? tutor.availability.filter((a) => a.day === selectedDay)
+        : tutor.availability,
+    [selectedDay, tutor.availability]
+  );
+
+  // Keep the selected slot in sync with the chosen date: drop a slot that the
+  // tutor does not offer on that weekday and fall back to the first one that
+  // they do offer.
+  useEffect(() => {
+    if (!open || !selectedDay) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: reconcile the selected slot with the chosen date
+    setSlot((current) =>
+      slotsForDay.some((a) => sameSlot(a, current)) ? current : slotsForDay[0] ?? null
+    );
+  }, [open, selectedDay, slotsForDay]);
+
   if (!open) return null;
 
   const duration =
@@ -110,10 +162,17 @@ export default function BookingModal({
           totalPrice: estimate,
         }),
       });
-      if (!res.ok) throw new Error("Could not submit booking request");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error || "Could not submit booking request");
+      }
       setSuccess(true);
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -222,15 +281,21 @@ export default function BookingModal({
                   </label>
                   <select
                     value={slot ? `${slot.day}-${slot.start}` : ""}
+                    disabled={slotsForDay.length === 0}
                     onChange={(e) => {
-                      const found = tutor.availability.find(
+                      const found = slotsForDay.find(
                         (a) => `${a.day}-${a.start}` === e.target.value
                       );
                       setSlot(found ?? null);
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-navy-600 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {tutor.availability.map((a) => (
+                    {(slotsForDay.length === 0 || !slot) && (
+                      <option value="">
+                        {slotsForDay.length === 0 ? "No slots available" : "Select a time slot"}
+                      </option>
+                    )}
+                    {slotsForDay.map((a) => (
                       <option key={`${a.day}-${a.start}`} value={`${a.day}-${a.start}`}>
                         {a.day} {a.start}–{a.end}
                       </option>
@@ -299,10 +364,17 @@ export default function BookingModal({
               >
                 {submitting ? "Sending Request..." : "Send Booking Request"}
               </button>
-              {(!date || !slot) && (
+              {date && selectedDay && slotsForDay.length === 0 ? (
                 <p className="text-center text-xs text-slate-400">
-                  Select a preferred date and time slot to continue.
+                  {tutor.fullName.split(" ")[0]} does not teach on{" "}
+                  {FULL_DAY_NAMES[selectedDay]} — please pick another date.
                 </p>
+              ) : (
+                (!date || !slot) && (
+                  <p className="text-center text-xs text-slate-400">
+                    Select a preferred date and time slot to continue.
+                  </p>
+                )
               )}
             </div>
           )}
