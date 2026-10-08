@@ -133,7 +133,7 @@ async function attachDetails(tutor: Tutor): Promise<Tutor> {
       ORDER BY day_of_week, start_time
     `,
     typedSql`
-      SELECT id, rating, comment, created_at
+      SELECT id, student_name, rating, comment, created_at
       FROM reviews WHERE tutor_id = ${tutor.id}
       ORDER BY created_at DESC LIMIT 20
     `,

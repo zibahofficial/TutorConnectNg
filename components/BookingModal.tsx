@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpenCheck,
@@ -56,6 +56,17 @@ export default function BookingModal({
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+
+  // This modal stays mounted while closed, so the `initialSlot` prop (the slot
+  // tapped in the tutor's Weekly Availability calendar) is only read by
+  // useState on the very first render. Re-sync the selected slot every time
+  // the modal opens so the form always reflects the slot the user selected.
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: adopt the calendar-selected slot each time the modal opens
+      setSlot(initialSlot ?? tutor.availability[0] ?? null);
+    }
+  }, [open, initialSlot, tutor.availability]);
 
   if (!open) return null;
 

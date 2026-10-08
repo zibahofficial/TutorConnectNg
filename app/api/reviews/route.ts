@@ -26,9 +26,9 @@ export async function POST(req: NextRequest) {
   if (!auth) {
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   }
-  if (auth.role !== "student" && auth.role !== "parent") {
+  if (auth.role !== "student" && auth.role !== "parent" && auth.role !== "admin") {
     return NextResponse.json(
-      { error: "Only students and parents can submit reviews." },
+      { error: "Only students, parents, and admins can submit reviews." },
       { status: 403 }
     );
   }
@@ -41,13 +41,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const bookingId = typeof body.bookingId === "string" ? body.bookingId.trim() : "";
   const rating = Number(body.rating);
   const comment = typeof body.comment === "string" ? body.comment.trim() : "";
 
-  if (!bookingId) {
-    return NextResponse.json({ error: "bookingId is required." }, { status: 400 });
-  }
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
     return NextResponse.json({ error: "Rating must be an integer from 1 to 5." }, { status: 400 });
   }
@@ -55,6 +51,45 @@ export async function POST(req: NextRequest) {
   const typedSql = sql as unknown as SqlTag;
 
   try {
+    // The reviewer's display name always comes from the authenticated
+    // account — never from the request body.
+    const userRows = await typedSql`
+      SELECT full_name FROM users WHERE id = ${auth.id} LIMIT 1
+    `;
+    const reviewerName = String(
+      (userRows[0] as Record<string, unknown> | undefined)?.full_name ??
+        (auth.role === "admin" ? "Admin" : "Student")
+    );
+
+    if (auth.role === "admin") {
+      // Admins submit free-form tutor reviews: no booking is attached, so an
+      // admin can never impersonate a student or review someone else's
+      // booking. The review stays associated with the tutor profile being
+      // reviewed (validated to exist below).
+      const tutorId = typeof body.tutorId === "string" ? body.tutorId.trim() : "";
+      if (!tutorId) {
+        return NextResponse.json({ error: "tutorId is required." }, { status: 400 });
+      }
+      const tutorRows = await typedSql`
+        SELECT id FROM tutor_profiles WHERE id = ${tutorId} LIMIT 1
+      `;
+      if (!tutorRows[0]) {
+        return NextResponse.json({ error: "Tutor not found." }, { status: 404 });
+      }
+      const inserted = await typedSql`
+        INSERT INTO reviews (booking_id, student_id, tutor_id, student_name, rating, comment)
+        VALUES (NULL, ${auth.id}, ${tutorId}, ${reviewerName}, ${rating}, ${comment})
+        RETURNING id, booking_id, student_id, tutor_id, student_name, rating, comment, created_at
+      `;
+      return NextResponse.json({ source: "neon", review: inserted[0] }, { status: 201 });
+    }
+
+    // Students and parents review their own completed bookings.
+    const bookingId = typeof body.bookingId === "string" ? body.bookingId.trim() : "";
+    if (!bookingId) {
+      return NextResponse.json({ error: "bookingId is required." }, { status: 400 });
+    }
+
     // Derive ownership and tutor identity from PostgreSQL. Browser-supplied
     // student/tutor identifiers are deliberately ignored.
     const bookingRows = await typedSql`
@@ -89,9 +124,9 @@ export async function POST(req: NextRequest) {
     }
 
     const inserted = await typedSql`
-      INSERT INTO reviews (booking_id, student_id, tutor_id, rating, comment)
-      VALUES (${bookingId}, ${auth.id}, ${booking.tutor_id}, ${rating}, ${comment})
-      RETURNING id, booking_id, student_id, tutor_id, rating, comment, created_at
+      INSERT INTO reviews (booking_id, student_id, tutor_id, student_name, rating, comment)
+      VALUES (${bookingId}, ${auth.id}, ${booking.tutor_id}, ${reviewerName}, ${rating}, ${comment})
+      RETURNING id, booking_id, student_id, tutor_id, student_name, rating, comment, created_at
     `;
 
     return NextResponse.json({ source: "neon", review: inserted[0] }, { status: 201 });

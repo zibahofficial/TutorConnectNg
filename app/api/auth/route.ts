@@ -802,6 +802,9 @@ export async function POST(req: NextRequest) {
           source: "neon",
           tutor: {
             id: String(row.id),
+            // tutor_profiles.id — the id reviews.tutor_id references, so the
+            // admin review form can target this tutor without guessing.
+            tutorProfileId: row.tutor_profile_id != null ? String(row.tutor_profile_id) : null,
             email: row.email ? String(row.email) : null,
             fullName: row.full_name ? String(row.full_name) : null,
             phone: row.phone ? String(row.phone) : null,

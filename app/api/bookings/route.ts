@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
+import { mapBookingRow } from "@/db/bookings";
 import { verifyToken } from "@/lib/auth-store";
 import type { Booking } from "@/lib/types";
 
@@ -53,47 +54,69 @@ export async function GET(req: NextRequest) {
       const typedSql = sql as unknown as SqlTag;
       // Apply the same filters the mock branch applies so dashboards scoped
       // to one tutor/status/student work identically in database mode.
+      // Rows are joined with the tutor's display name and subject so they can
+      // be mapped onto the camelCase `Booking` shape the dashboards consume.
       let rows: Record<string, unknown>[];
       if (tutorId && status) {
         rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name
-          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
+          FROM bookings b
+          LEFT JOIN users u ON u.id = b.student_id
+          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
+          LEFT JOIN users tu ON tu.id = tp.user_id
+          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
           WHERE b.tutor_id = ${tutorId} AND b.status = ${status}
           ORDER BY b.created_at DESC LIMIT 100
         `;
       } else if (tutorId) {
         rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name
-          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
+          FROM bookings b
+          LEFT JOIN users u ON u.id = b.student_id
+          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
+          LEFT JOIN users tu ON tu.id = tp.user_id
+          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
           WHERE b.tutor_id = ${tutorId}
           ORDER BY b.created_at DESC LIMIT 100
         `;
       } else if (auth.role === "tutor") {
         // Tutors only ever see requests addressed to their own tutor profile.
         rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name
-          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
+          FROM bookings b
+          LEFT JOIN users u ON u.id = b.student_id
+          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
+          LEFT JOIN users tu ON tu.id = tp.user_id
+          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
           WHERE b.tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${auth.id})
           ORDER BY b.created_at DESC LIMIT 100
         `;
       } else if (status) {
         rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name
-          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
+          FROM bookings b
+          LEFT JOIN users u ON u.id = b.student_id
+          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
+          LEFT JOIN users tu ON tu.id = tp.user_id
+          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
           WHERE b.status = ${status}
             AND (${auth.role === "admin"} OR b.student_id = ${auth.id} OR b.student_id IS NULL)
           ORDER BY b.created_at DESC LIMIT 100
         `;
       } else {
         rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name
-          FROM bookings b LEFT JOIN users u ON u.id = b.student_id
+          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
+          FROM bookings b
+          LEFT JOIN users u ON u.id = b.student_id
+          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
+          LEFT JOIN users tu ON tu.id = tp.user_id
+          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
           WHERE ${auth.role === "admin"} OR b.student_id = ${auth.id} OR b.student_id IS NULL
           ORDER BY b.created_at DESC LIMIT 100
         `;
       }
       if (rows) {
-        return NextResponse.json({ source: "neon", bookings: rows });
+        return NextResponse.json({ source: "neon", bookings: rows.map(mapBookingRow) });
       }
     } catch (err) {
       console.error("Neon bookings query failed:", err);

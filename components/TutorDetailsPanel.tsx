@@ -18,6 +18,7 @@ function initials(name: string) {
 interface TutorDetailsData {
   tutor: {
     id: string;
+    tutorProfileId: string | null;
     email: string | null;
     fullName: string | null;
     phone: string | null;
@@ -87,6 +88,14 @@ export default function TutorDetailsPanel({ userId }: { userId: string }) {
   const [data, setData] = useState<TutorDetailsData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  // Admin review form (free-form tutor review submitted via /api/reviews).
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState("");
+  const [reviewError, setReviewError] = useState("");
+  // Bumped after a successful review so the aggregates (rating/count) reload.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,7 +126,40 @@ export default function TutorDetailsPanel({ userId }: { userId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, refreshKey]);
+
+  async function submitAdminReview() {
+    if (reviewSubmitting || !data?.tutor.tutorProfileId) return;
+    setReviewSubmitting(true);
+    setReviewMessage("");
+    setReviewError("");
+    try {
+      const token = window.localStorage.getItem("tutorconnect_token") || "";
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          tutorId: data.tutor.tutorProfileId,
+          rating: reviewRating,
+          comment: reviewComment,
+        }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(payload?.error || "The review could not be saved.");
+      setReviewMessage("Review submitted — it now appears on the tutor's public profile.");
+      setReviewComment("");
+      setReviewRating(5);
+      // Reload the tutor details so the rating/review aggregates reflect it.
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "The review could not be saved.");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -200,6 +242,48 @@ export default function TutorDetailsPanel({ userId }: { userId: string }) {
             <Field label="Reviews">{tutor.totalReviews != null ? String(tutor.totalReviews) : "0"}</Field>
             <Field label="Sessions">{tutor.totalSessions != null ? String(tutor.totalSessions) : "0"}</Field>
           </div>
+        </Section>
+
+        <Section title="Submit a Review" icon={Star}>
+          {tutor.tutorProfileId ? (
+            <div className="space-y-2.5">
+              <div className="flex justify-center gap-1.5">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setReviewRating(n)}
+                    disabled={reviewSubmitting}
+                    aria-label={`${n} star review`}
+                  >
+                    <Star
+                      size={22}
+                      className={n <= reviewRating ? "fill-amber-400 text-amber-400" : "text-slate-200"}
+                    />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                rows={3}
+                placeholder="Write a review for this tutor..."
+                className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-navy-600 focus:outline-none"
+              />
+              {reviewError && <p className="text-xs font-medium text-rose-600">{reviewError}</p>}
+              {reviewMessage && <p className="text-xs font-medium text-emerald-600">{reviewMessage}</p>}
+              <button
+                type="button"
+                onClick={submitAdminReview}
+                disabled={reviewSubmitting}
+                className="btn-primary w-full !py-2 text-sm disabled:opacity-60"
+              >
+                {reviewSubmitting ? "Saving Review…" : "Submit Review"}
+              </button>
+            </div>
+          ) : (
+            <NotProvided label="No tutor profile — reviews require a tutor profile" />
+          )}
         </Section>
 
         <Section title="Subjects" icon={FileText}>
