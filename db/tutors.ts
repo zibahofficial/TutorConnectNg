@@ -133,9 +133,11 @@ async function attachDetails(tutor: Tutor): Promise<Tutor> {
       ORDER BY day_of_week, start_time
     `,
     typedSql`
-      SELECT id, student_name, rating, comment, created_at
-      FROM reviews WHERE tutor_id = ${tutor.id}
-      ORDER BY created_at DESC LIMIT 20
+      SELECT r.id, u.full_name AS student_name, r.rating, r.comment, r.created_at
+      FROM reviews r
+      LEFT JOIN users u ON u.id = r.student_id
+      WHERE r.tutor_id = ${tutor.id}
+      ORDER BY r.created_at DESC LIMIT 20
     `,
   ]);
   return {
@@ -203,9 +205,14 @@ export async function fetchApprovedTutors(limit = 200): Promise<Tutor[]> {
   return rows.filter(isPubliclyVisible).map(mapTutorRow);
 }
 
+// `tutor_profiles.id` is a uuid column, so a malformed id (stale link, typo,
+// crawler) would make Postgres throw and crash the page instead of showing the
+// existing "Tutor not found" screen. Treat it as simply "no such tutor".
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Public profile lookup by `tutor_profiles.id`. Returns null when unknown. */
 export async function fetchApprovedTutorById(id: string): Promise<Tutor | null> {
-  if (!hasDatabase || !id) return null;
+  if (!hasDatabase || !id || !UUID_RE.test(id)) return null;
   const typedSql = sql as unknown as SqlTag;
   const rows = (await typedSql`
     SELECT

@@ -44,7 +44,10 @@ export default function PrivateChat({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fetchedChoices, setFetchedChoices] = useState<ChatPartner[]>([]);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  // Id of the newest message the thread has already been scrolled to, so the
+  // 5-second poll never re-scrolls the page when nothing new arrived.
+  const lastSeenMessageId = useRef<string | null>(null);
 
   // Picker choices are either supplied (admin: real users) or fetched
   // (students/parents: real tutors) — derived, not synced, to avoid
@@ -136,9 +139,16 @@ export default function PrivateChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- thread identity + token only
   }, [myKey, active?.key]);
 
-  // Keep the thread scrolled to the newest message.
+  // Keep the thread scrolled to the newest message. Only the thread's own
+  // scroll box is moved (never the page), and only when a message that has
+  // not been seen before arrives — otherwise the 5-second poll would yank the
+  // dashboard back down while the user is scrolling/reading.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "nearest" });
+    const newestId = messages.length > 0 ? messages[messages.length - 1].id : null;
+    if (newestId === lastSeenMessageId.current) return;
+    lastSeenMessageId.current = newestId;
+    const box = threadRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
   }, [messages]);
 
   const send = useCallback(async () => {
@@ -250,7 +260,7 @@ export default function PrivateChat({
                 </div>
               </div>
 
-              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              <div ref={threadRef} className="flex-1 space-y-3 overflow-y-auto p-4">
                 {loading ? (
                   <p className="py-10 text-center text-sm text-slate-400">Loading conversation…</p>
                 ) : messages.length === 0 ? (
@@ -277,7 +287,6 @@ export default function PrivateChat({
                     );
                   })
                 )}
-                <div ref={bottomRef} />
               </div>
 
               <div className="border-t border-slate-100 p-3">

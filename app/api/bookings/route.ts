@@ -179,12 +179,25 @@ export async function POST(req: NextRequest) {
   if (hasDatabase) {
     try {
       const typedSql = sql as unknown as SqlTag;
+      // `bookings` stores the subject as a reference to the tutor's own
+      // subject row, so map the submitted subject name onto tutor_subjects.id
+      // (otherwise the saved booking has no subject at all).
+      const subjectName = typeof body.subject === "string" ? body.subject.trim() : "";
+      let subjectId: string | null = null;
+      if (subjectName) {
+        const subjectRows = await typedSql`
+          SELECT id FROM tutor_subjects
+          WHERE tutor_id = ${body.tutorId} AND subject_name = ${subjectName}
+          LIMIT 1
+        `;
+        subjectId = subjectRows[0]?.id ? String(subjectRows[0].id) : null;
+      }
       const inserted = await typedSql`
         INSERT INTO bookings (
-  student_id, tutor_id, scheduled_date, start_time, end_time,
+  student_id, tutor_id, subject_id, scheduled_date, start_time, end_time,
   status, session_mode, meeting_link, total_price, notes, grade_level
 ) VALUES (
-  ${body.studentId || null}, ${body.tutorId}, ${body.scheduledDate},
+  ${body.studentId || null}, ${body.tutorId}, ${subjectId}, ${body.scheduledDate},
   ${body.startTime}, ${body.endTime || body.startTime}, 'pending',
   ${body.sessionMode || "online"}, ${body.meetingLink || null},
   ${Number(body.totalPrice) || 0}, ${body.notes || ""}, ${body.gradeLevel}
@@ -237,7 +250,13 @@ export async function PATCH(req: NextRequest) {
         const updated = await typedSql`
   UPDATE bookings
   SET
-    subject = COALESCE(${edit.subject ?? null}, subject),
+    subject_id = COALESCE(
+      (SELECT ts.id FROM tutor_subjects ts
+        WHERE ts.tutor_id = bookings.tutor_id
+          AND ts.subject_name = ${edit.subject ?? null}
+        LIMIT 1),
+      subject_id
+    ),
     grade_level = COALESCE(${edit.gradeLevel ?? null}, grade_level),
     scheduled_date = COALESCE(${edit.scheduledDate ?? null}, scheduled_date),
     start_time = COALESCE(${edit.startTime ?? null}, start_time),
