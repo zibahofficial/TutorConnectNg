@@ -39,109 +39,98 @@ function requireAuth(req: NextRequest): { id: string; email: string; role: strin
 
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
+
   if (!auth) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401 }
+    );
   }
+
   const params = req.nextUrl.searchParams;
   const tutorId = params.get("tutorId");
   const status = params.get("status");
-  // Note: the studentId param is intentionally ignored for non-admins —
-  // bookings are always scoped server-side to the authenticated user so the
-  // param can never be used to read someone else's bookings.
 
   if (hasDatabase) {
     try {
       const typedSql = sql as unknown as SqlTag;
-      // Apply the same filters the mock branch applies so dashboards scoped
-      // to one tutor/status/student work identically in database mode.
-      // Rows are joined with the tutor's display name and subject so they can
-      // be mapped onto the camelCase `Booking` shape the dashboards consume.
-      let rows: Record<string, unknown>[];
-      if (tutorId && status) {
-        rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
-          FROM bookings b
-          LEFT JOIN users u ON u.id = b.student_id
-          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
-          LEFT JOIN users tu ON tu.id = tp.user_id
-          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
-          WHERE b.tutor_id = ${tutorId} AND b.status = ${status}
-          ORDER BY b.created_at DESC LIMIT 100
-        `;
-      } else if (tutorId) {
-        rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
-          FROM bookings b
-          LEFT JOIN users u ON u.id = b.student_id
-          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
-          LEFT JOIN users tu ON tu.id = tp.user_id
-          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
-          WHERE b.tutor_id = ${tutorId}
-          ORDER BY b.created_at DESC LIMIT 100
-        `;
-      } else if (auth.role === "tutor") {
-        // Tutors only ever see requests addressed to their own tutor profile.
-        rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
-          FROM bookings b
-          LEFT JOIN users u ON u.id = b.student_id
-          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
-          LEFT JOIN users tu ON tu.id = tp.user_id
-          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
-          WHERE b.tutor_id IN (SELECT id FROM tutor_profiles WHERE user_id = ${auth.id})
-          ORDER BY b.created_at DESC LIMIT 100
-        `;
-      } else if (status) {
-        rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
-          FROM bookings b
-          LEFT JOIN users u ON u.id = b.student_id
-          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
-          LEFT JOIN users tu ON tu.id = tp.user_id
-          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
-          WHERE b.status = ${status}
-            AND (${auth.role === "admin"} OR b.student_id = ${auth.id} OR b.student_id IS NULL)
-          ORDER BY b.created_at DESC LIMIT 100
-        `;
-      } else {
-        rows = await typedSql`
-          SELECT b.*, u.full_name AS student_name, tu.full_name AS tutor_name, ts.subject_name AS subject
-          FROM bookings b
-          LEFT JOIN users u ON u.id = b.student_id
-          LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
-          LEFT JOIN users tu ON tu.id = tp.user_id
-          LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
-          WHERE ${auth.role === "admin"} OR b.student_id = ${auth.id} OR b.student_id IS NULL
-          ORDER BY b.created_at DESC LIMIT 100
-        `;
-      }
-      if (rows) {
-        return NextResponse.json({ source: "neon", bookings: rows.map(mapBookingRow) });
-      }
-    } catch (err) {
-      console.error("Neon bookings query failed:", err);
-    }
-  }
 
+      const rows = await typedSql`
+        SELECT
+          b.*,
+          u.full_name AS student_name,
+          tu.full_name AS tutor_name,
+          ts.subject_name AS subject
+        FROM bookings b
+        LEFT JOIN users u ON u.id = b.student_id
+        LEFT JOIN tutor_profiles tp ON tp.id = b.tutor_id
+        LEFT JOIN users tu ON tu.id = tp.user_id
+        LEFT JOIN tutor_subjects ts ON ts.id = b.subject_id
+        WHERE
+          (
+            ${auth.role === "admin"}
+            OR (
+              ${auth.role === "tutor"}
+              AND b.tutor_id IN (
+                SELECT id
+                FROM tutor_profiles
+                WHERE user_id = ${auth.id}
+              )
+            )
+            OR (
+              ${auth.role !== "admin" && auth.role !== "tutor"}
+              AND b.student_id = ${auth.id}
+            )
+          )
+          AND (${tutorId === null} OR b.tutor_id = ${tutorId})
+          AND (${status === null} OR b.status = ${status})
+        ORDER BY b.created_at DESC
+        LIMIT 100
+      `;
+
+      return NextResponse.json({
+        source: "neon",
+        bookings: rows.map(mapBookingRow),
+      });
+               } catch (err) {
+        console.error("Neon bookings query failed:", err);
+
+        return NextResponse.json(
+          { error: "Could not load bookings. Please try again." },
+          { status: 500 }
+        );
+      }
+    }
+  // Local/demo mode: retain the existing in-memory booking store.
   let results = getBookingStore();
-  if (tutorId) {
-    // Only admins may read an arbitrary tutor's booking list; a tutor may only
-    // read their own (their profile id is checked server-side).
-    if (auth.role !== "admin") {
-      results = results.filter((b) => b.tutorId === auth.id);
-    } else {
+
+  if (auth.role === "admin") {
+    if (tutorId) {
       results = results.filter((b) => b.tutorId === tutorId);
     }
-  } else if (auth.role !== "admin") {
-    // Everyone else only ever receives their own bookings — the studentId
-    // query param can never be used to read someone else's data.
+  } else if (auth.role === "tutor") {
+    if (tutorId) {
+      results = results.filter((b) => b.tutorId === auth.id);
+    } else {
+      results = results.filter((b) => b.tutorId === auth.id);
+    }
+  } else {
     results = results.filter((b) => b.studentId === auth.id);
+
+    if (tutorId) {
+      results = results.filter((b) => b.tutorId === tutorId);
+    }
   }
-  if (status) results = results.filter((b) => b.status === status);
 
-  return NextResponse.json({ source: "mock", bookings: results });
+  if (status) {
+    results = results.filter((b) => b.status === status);
+  }
+
+  return NextResponse.json({
+    source: "mock",
+    bookings: results,
+  });
 }
-
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
   try {
@@ -237,53 +226,240 @@ export async function PATCH(req: NextRequest) {
   if (!id) {
     return NextResponse.json({ error: "id is required." }, { status: 400 });
   }
+    // Allow the owning tutor to send or update a meeting link
+  // for an accepted online booking without changing its status.
+  if (
+    !status &&
+    !edit &&
+    Object.prototype.hasOwnProperty.call(body, "meetingLink")
+  ) {
+    if (auth.role !== "tutor") {
+      return NextResponse.json(
+        { error: "Only tutors can update meeting links." },
+        { status: 403 }
+      );
+    }
+
+    const link =
+      typeof meetingLink === "string" ? meetingLink.trim() : "";
+
+    let parsedLink: URL;
+
+    try {
+      parsedLink = new URL(link);
+    } catch {
+      return NextResponse.json(
+        { error: "Enter a valid meeting URL." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !link ||
+      (parsedLink.protocol !== "https:" &&
+        parsedLink.protocol !== "http:")
+    ) {
+      return NextResponse.json(
+        {
+          error: "The meeting link must be a valid HTTP or HTTPS URL.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!hasDatabase) {
+      return NextResponse.json(
+        {
+          error:
+            "The database is unavailable. The meeting link was not saved.",
+        },
+        { status: 503 }
+      );
+    }
+
+    try {
+      const typedSql = sql as unknown as SqlTag;
+
+      const updated = await typedSql`
+        UPDATE bookings AS b
+        SET meeting_link = ${link}
+        WHERE b.id = ${id}
+          AND b.status = 'accepted'
+          AND b.session_mode = 'online'
+          AND EXISTS (
+            SELECT 1
+            FROM tutor_profiles AS tp
+            WHERE tp.id = b.tutor_id
+              AND tp.user_id = ${auth.id}
+          )
+        RETURNING b.id
+      `;
+
+      if (updated.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "No accepted online booking belonging to your account was found.",
+          },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        source: "neon",
+        id,
+        meetingLink: link,
+        message: "Meeting link saved successfully.",
+      });
+    } catch (err) {
+      console.error("Meeting link update failed:", err);
+
+      return NextResponse.json(
+        {
+          error:
+            "The meeting link could not be saved. Please try again.",
+        },
+        { status: 500 }
+      );
+    }
+  }
   if (!status && !edit) {
     return NextResponse.json({ error: "id and status (or edit) are required." }, { status: 400 });
   }
 
-  // Edit a booking's details — only allowed while the request is still
-  // pending (not yet accepted/approved by the tutor).
+    // Edit booking details only when the booking is pending
+  // and the authenticated user is authorized to edit it.
   if (edit) {
+    const canEditBooking =
+      auth.role === "admin" ||
+      auth.role === "student" ||
+      auth.role === "parent";
+
+    if (!canEditBooking) {
+      return NextResponse.json(
+        { error: "You are not authorized to edit this booking." },
+        { status: 403 }
+      );
+    }
+
     if (hasDatabase) {
       try {
         const typedSql = sql as unknown as SqlTag;
+
         const updated = await typedSql`
-  UPDATE bookings
-  SET
-    subject_id = COALESCE(
-      (SELECT ts.id FROM tutor_subjects ts
-        WHERE ts.tutor_id = bookings.tutor_id
-          AND ts.subject_name = ${edit.subject ?? null}
-        LIMIT 1),
-      subject_id
-    ),
-    grade_level = COALESCE(${edit.gradeLevel ?? null}, grade_level),
-    scheduled_date = COALESCE(${edit.scheduledDate ?? null}, scheduled_date),
-    start_time = COALESCE(${edit.startTime ?? null}, start_time),
-    end_time = COALESCE(${edit.endTime ?? null}, end_time),
-    session_mode = COALESCE(${edit.sessionMode ?? null}, session_mode),
-    notes = COALESCE(${edit.notes ?? null}, notes),
-    total_price = COALESCE(${edit.totalPrice ?? null}, total_price)
-  WHERE id = ${id} AND status = 'pending'
-  RETURNING *
-`;
+          UPDATE bookings
+          SET
+            subject_id = COALESCE(
+              (
+                SELECT ts.id
+                FROM tutor_subjects ts
+                WHERE ts.tutor_id = bookings.tutor_id
+                  AND ts.subject_name = ${edit.subject ?? null}
+                LIMIT 1
+              ),
+              subject_id
+            ),
+            grade_level = COALESCE(${edit.gradeLevel ?? null}, grade_level),
+            scheduled_date = COALESCE(${edit.scheduledDate ?? null}, scheduled_date),
+            start_time = COALESCE(${edit.startTime ?? null}, start_time),
+            end_time = COALESCE(${edit.endTime ?? null}, end_time),
+            session_mode = COALESCE(${edit.sessionMode ?? null}, session_mode),
+            notes = COALESCE(${edit.notes ?? null}, notes),
+            total_price = COALESCE(${edit.totalPrice ?? null}, total_price)
+         WHERE id = ${id}
+  AND status = 'pending'
+  AND (
+    ${auth.role === "admin"}
+    OR (
+      ${auth.role === "student" || auth.role === "parent"}
+      AND student_id = ${auth.id}
+    )
+  )
+          RETURNING *
+        `;
+
         if (updated.length === 0) {
-          return NextResponse.json({ error: "Booking not found or no longer editable — only pending requests can be edited." }, { status: 409 });
+          return NextResponse.json(
+            {
+              error:
+                "Booking not found, not owned by your account, or no longer editable.",
+            },
+            { status: 409 }
+          );
         }
-        return NextResponse.json({ source: "neon", booking: updated[0] });
+
+        return NextResponse.json({
+          source: "neon",
+          booking: updated[0],
+        });
       } catch (err) {
-        console.error("Neon booking edit failed, falling back to in-memory store:", err);
+        console.error("Neon booking edit failed:", err);
+
+        return NextResponse.json(
+          {
+            error: "The booking could not be updated. Please try again.",
+          },
+          { status: 500 }
+        );
       }
     }
 
+    // In-memory fallback is for local/demo mode only.
     const store = getBookingStore();
     const booking = store.find((b) => b.id === id);
+
     if (!booking) {
-      return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+      return NextResponse.json(
+        { error: "Booking not found." },
+        { status: 404 }
+      );
     }
+    const isAdmin = auth.role === "admin";
+
+    const tutorOwnsBooking =
+      auth.role === "tutor" &&
+      booking.tutorId === auth.id &&
+      (
+        (booking.status === "pending" &&
+          (status === "accepted" || status === "rejected")) ||
+        (booking.status === "accepted" && status === "completed")
+      );
+
+    const studentOwnsBooking =
+      (auth.role === "student" || auth.role === "parent") &&
+      booking.studentId === auth.id &&
+      status === "cancelled" &&
+      (booking.status === "pending" || booking.status === "accepted");
+
+    if (!isAdmin && !tutorOwnsBooking && !studentOwnsBooking) {
+      return NextResponse.json(
+        { error: "You are not authorized to perform this booking action." },
+        { status: 403 }
+      );
+    }
+    if (
+      auth.role !== "admin" &&
+      !(
+        (auth.role === "student" || auth.role === "parent") &&
+        booking.studentId === auth.id
+      )
+    ) {
+      return NextResponse.json(
+        { error: "You are not authorized to edit this booking." },
+        { status: 403 }
+      );
+    }
+
     if (booking.status !== "pending") {
-      return NextResponse.json({ error: "Only pending requests can be edited — this booking has already been processed." }, { status: 409 });
+      return NextResponse.json(
+        {
+          error:
+            "Only pending requests can be edited. This booking has already been processed.",
+        },
+        { status: 409 }
+      );
     }
+
     if (edit.subject !== undefined) booking.subject = edit.subject;
     if (edit.gradeLevel !== undefined) booking.gradeLevel = edit.gradeLevel;
     if (edit.scheduledDate !== undefined) booking.scheduledDate = edit.scheduledDate;
@@ -292,28 +468,120 @@ export async function PATCH(req: NextRequest) {
     if (edit.sessionMode !== undefined) booking.sessionMode = edit.sessionMode;
     if (edit.notes !== undefined) booking.notes = edit.notes;
     if (edit.totalPrice !== undefined) booking.totalPrice = edit.totalPrice;
-    return NextResponse.json({ source: "mock", booking });
+
+    return NextResponse.json({
+      source: "mock",
+      booking,
+    });
+  }
+   // Status change path (accept / decline / cancel / complete)
+  if (!status) {
+    return NextResponse.json(
+      { error: "status is required for status changes." },
+      { status: 400 }
+    );
   }
 
-  // Status change path (accept / decline / cancel / complete)
-  if (!status) {
-    return NextResponse.json({ error: "status is required for status changes." }, { status: 400 });
+  const validStatuses: Booking["status"][] = [
+    "pending",
+    "accepted",
+    "rejected",
+    "completed",
+    "cancelled",
+  ];
+
+  if (!validStatuses.includes(status)) {
+    return NextResponse.json(
+      { error: "Invalid booking status." },
+      { status: 400 }
+    );
+  }
+
+  const tutorCanChangeStatus =
+    auth.role === "tutor" &&
+    ["accepted", "rejected", "completed"].includes(status);
+
+  const studentOrParentCanCancel =
+    (auth.role === "student" || auth.role === "parent") &&
+    status === "cancelled";
+
+  if (
+    auth.role !== "admin" &&
+    !tutorCanChangeStatus &&
+    !studentOrParentCanCancel
+  ) {
+    return NextResponse.json(
+      { error: "You are not authorized to perform this booking action." },
+      { status: 403 }
+    );
   }
 
   if (hasDatabase) {
     try {
       const typedSql = sql as unknown as SqlTag;
-      const updated = await typedSql`
-  UPDATE bookings
-  SET
-    status = ${status},
-    meeting_link = COALESCE(${meetingLink || null}, meeting_link)
-  WHERE id = ${id}
-  RETURNING *
-`;
-      return NextResponse.json({ source: "neon", booking: updated[0] });
-    } catch (err) {
-      console.error("Neon booking update failed, falling back to in-memory store:", err);
+           const updated = await typedSql`
+        UPDATE bookings AS b
+        SET
+          status = ${status},
+          meeting_link = COALESCE(
+            ${meetingLink || null},
+            b.meeting_link
+          )
+        WHERE b.id = ${id}
+          AND (
+            ${auth.role === "admin"}
+            OR (
+              ${auth.role === "tutor"}
+              AND b.tutor_id IN (
+                SELECT id
+                FROM tutor_profiles
+                WHERE user_id = ${auth.id}
+              )
+              AND (
+                (
+                  b.status = 'pending'
+                  AND ${status === "accepted" || status === "rejected"}
+                )
+                OR (
+                  b.status = 'accepted'
+                  AND ${status === "completed"}
+                )
+              )
+            )
+            OR (
+              ${auth.role === "student" || auth.role === "parent"}
+              AND b.student_id = ${auth.id}
+              AND ${status === "cancelled"}
+              AND b.status IN ('pending', 'accepted')
+            )
+          )
+        RETURNING b.*
+      `;
+
+      if (updated.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Booking not found, or you are not authorized to change its status.",
+          },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({
+        source: "neon",
+        booking: mapBookingRow(updated[0]),
+      });
+
+       } catch (err) {
+      console.error("Neon booking update failed:", err);
+
+      return NextResponse.json(
+        {
+          error: "The booking could not be updated. Please try again.",
+        },
+        { status: 500 }
+      );
     }
   }
 
@@ -331,41 +599,106 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const auth = requireAuth(req);
+
   if (!auth) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401 }
+    );
   }
+
   let body: Record<string, unknown>;
+
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400 }
+    );
   }
 
   const id = (body.id as string) || "";
+
   if (!id) {
-    return NextResponse.json({ error: "id is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "id is required." },
+      { status: 400 }
+    );
   }
 
-  // Permanently remove a booking record (used by the parent/student
-  // dashboards' delete action).
   if (hasDatabase) {
     try {
       const typedSql = sql as unknown as SqlTag;
-      const deleted = await typedSql`DELETE FROM bookings WHERE id = ${id} RETURNING id`;
+
+      const deleted = await typedSql`
+        DELETE FROM bookings
+        WHERE id = ${id}
+          AND (
+            ${auth.role === "admin"}
+            OR (
+              ${auth.role === "student" || auth.role === "parent"}
+              AND student_id = ${auth.id}
+            )
+          )
+        RETURNING id
+      `;
+
       if (deleted.length === 0) {
-        return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+        return NextResponse.json(
+          {
+            error:
+              "Booking not found or you are not authorized to delete it.",
+          },
+          { status: 404 }
+        );
       }
-      return NextResponse.json({ source: "neon", deleted: true });
+
+      return NextResponse.json({
+        source: "neon",
+        deleted: true,
+      });
     } catch (err) {
-      console.error("Neon booking delete failed, falling back to in-memory store:", err);
+      console.error("Neon booking delete failed:", err);
+
+      return NextResponse.json(
+        {
+          error: "The booking could not be deleted. Please try again.",
+        },
+        { status: 500 }
+      );
     }
   }
 
+  // In-memory deletion is used only when database mode is disabled.
   const store = getBookingStore();
-  const idx = store.findIndex((b) => b.id === id);
-  if (idx < 0) {
-    return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+  const booking = store.find((b) => b.id === id);
+
+  if (!booking) {
+    return NextResponse.json(
+      { error: "Booking not found." },
+      { status: 404 }
+    );
   }
+
+  if (
+    auth.role !== "admin" &&
+    !(
+      (auth.role === "student" || auth.role === "parent") &&
+      booking.studentId === auth.id
+    )
+  ) {
+    return NextResponse.json(
+      { error: "You are not authorized to delete this booking." },
+      { status: 403 }
+    );
+  }
+
+  const idx = store.findIndex((b) => b.id === id);
   store.splice(idx, 1);
-  return NextResponse.json({ source: "mock", deleted: true });
+
+  return NextResponse.json({
+    source: "mock",
+    deleted: true,
+  });
 }

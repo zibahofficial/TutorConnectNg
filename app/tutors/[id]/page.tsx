@@ -16,6 +16,8 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import TutorProfileActions from "@/components/TutorProfileActions";
+
+import HomeReviewLink from "@/components/HomeReviewLink";
 import { fetchApprovedTutorById } from "@/db/tutors";
 
 // Profiles are read live from PostgreSQL: a tutor that is unknown, not yet
@@ -178,11 +180,15 @@ export default async function TutorProfilePage({
               </div>
             </div>
 
-            {/* Reviews */}
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
-              <h2 className="mb-4 font-display text-lg font-bold text-slate-900">
-                Student Reviews ({tutor.totalReviews})
-              </h2>
+{/* Reviews */}
+<div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
+  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <h2 className="font-display text-lg font-bold text-slate-900">
+      Student Reviews ({tutor.totalReviews})
+    </h2>
+
+    <HomeReviewLink tutorId={tutor.id} />
+  </div>
               {tutor.reviews.length === 0 ? (
                 <p className="text-sm text-slate-400">
                   No reviews yet — reviews are written by students after a completed session.

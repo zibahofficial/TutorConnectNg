@@ -359,41 +359,143 @@ export default function TutorDashboard() {
     return { pending, upcoming, completed: completed.length };
   }, [bookings]);
 
-  async function updateStatus(
-  id: string,
-  status: Booking["status"],
-  booking?: Booking
-) {
-  let meetingLink: string | undefined;
+   async function updateStatus(
+    id: string,
+    status: Booking["status"],
+    booking?: Booking
+  ) {
+    let meetingLink: string | undefined;
 
-  if (status === "accepted" && booking?.sessionMode === "online") {
-    meetingLink = window.prompt(
-      "Paste the Zoom or Google Meet link for this session:"
-    )?.trim();
+    if (status === "accepted" && booking?.sessionMode === "online") {
+      const entered = window.prompt(
+        "Paste the Zoom or Google Meet link for this session:"
+      );
 
-    if (!meetingLink) {
-      return;
+      if (entered === null) return;
+
+      meetingLink = entered.trim();
+
+      if (!meetingLink) {
+        window.alert("Please enter a meeting link before accepting this booking.");
+        return;
+      }
+
+      try {
+        const parsedUrl = new URL(meetingLink);
+
+        if (
+          parsedUrl.protocol !== "https:" &&
+          parsedUrl.protocol !== "http:"
+        ) {
+          window.alert("Please enter a valid HTTP or HTTPS meeting link.");
+          return;
+        }
+      } catch {
+        window.alert("Please enter a valid meeting URL, including https://.");
+        return;
+      }
+    }
+
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: bookingAuthHeaders(),
+        body: JSON.stringify({ id, status, meetingLink }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        window.alert(
+          data?.error || "The booking could not be updated. Please try again."
+        );
+        return;
+      }
+
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === id
+            ? {
+                ...b,
+                status,
+                ...(meetingLink ? { meetingLink } : {}),
+              }
+            : b
+        )
+      );
+    } catch {
+      window.alert(
+        "The booking could not be updated. Please check your connection and try again."
+      );
     }
   }
 
-  setBookings((prev) =>
-    prev.map((b) =>
-      b.id === id
-        ? { ...b, status, ...(meetingLink ? { meetingLink } : {}) }
-        : b
-    )
-  );
+  async function updateMeetingLink(booking: Booking) {
+    if (booking.status !== "accepted" || booking.sessionMode !== "online") {
+      return;
+    }
 
-  try {
-    await fetch("/api/bookings", {
-      method: "PATCH",
-      headers: bookingAuthHeaders(),
-      body: JSON.stringify({ id, status, meetingLink }),
-    });
-  } catch {
-    // optimistic UI already applied; silently ignore demo network errors
+    const entered = window.prompt(
+      "Enter the Zoom or Google Meet link for this booking:",
+      booking.meetingLink || ""
+    );
+
+    if (entered === null) return;
+
+    const meetingLink = entered.trim();
+
+    if (!meetingLink) {
+      window.alert("Please enter a meeting link.");
+      return;
+    }
+
+    try {
+      const parsedUrl = new URL(meetingLink);
+
+      if (
+        parsedUrl.protocol !== "https:" &&
+        parsedUrl.protocol !== "http:"
+      ) {
+        window.alert("Please enter a valid HTTP or HTTPS meeting link.");
+        return;
+      }
+    } catch {
+      window.alert("Please enter a valid meeting URL, including https://.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: bookingAuthHeaders(),
+        body: JSON.stringify({
+          id: booking.id,
+          meetingLink,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        window.alert(
+          data?.error || "The meeting link could not be saved. Please try again."
+        );
+        return;
+      }
+
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === booking.id ? { ...b, meetingLink } : b
+        )
+      );
+
+      window.alert("Meeting link saved successfully.");
+    } catch {
+      window.alert(
+        "The meeting link could not be saved. Please check your connection and try again."
+      );
+    }
   }
-}
   async function addSlot() {
     if (newSlot.end <= newSlot.start) return;
     const token = localStorage.getItem("tutorconnect_token") || "";
@@ -521,6 +623,17 @@ export default function TutorDashboard() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-bold text-slate-700">{formatNaira(b.totalPrice)}</span>
                     <StatusBadge status={b.status} />
+                                        {b.status === "accepted" && b.sessionMode === "online" && (
+                      <button
+                        type="button"
+                        onClick={() => updateMeetingLink(b)}
+                        className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                      >
+                        {b.meetingLink
+                          ? "Update Meeting Link"
+                          : "Send Meeting Link"}
+                      </button>
+                    )}
                     {b.status === "accepted" && (
                       <button
                         onClick={() => updateStatus(b.id, "completed")}
