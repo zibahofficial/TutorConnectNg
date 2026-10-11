@@ -449,6 +449,28 @@ export default function TutorDashboard() {
       title={`Welcome back, ${(authUser?.full_name ?? "Tutor").split(" ")[0]}`}
       subtitle="Manage booking requests, your weekly availability, and your credentials."
     >
+      <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6">
+        <h2 className="font-display text-base font-bold text-slate-900">
+          Get Ready to Receive Bookings!
+        </h2>
+        <p className="mt-1 text-sm text-slate-700">
+          Want to start receiving bookings on TutorConnect Nigeria? Complete these three important steps:
+        </p>
+        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+          <li>
+            <strong>My Profile:</strong> Complete your details and click <strong>Save Profile</strong>.
+          </li>
+          <li>
+            <strong>Credentials &amp; Verification:</strong> Upload your academic credential and government-issued ID, then apply for verification.
+          </li>
+          <li>
+            <strong>Weekly Availability:</strong> Add the days and time slots when you are available to teach.
+          </li>
+        </ol>
+        <p className="mt-3 text-sm font-semibold text-slate-800">
+          Important: Complete all three steps to help students and parents find you and book suitable sessions.
+        </p>
+      </div>
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard icon={Clock3} label="Pending Requests" value={String(stats.pending)} accent="amber" />
         <StatCard icon={Calendar} label="Upcoming Sessions" value={String(stats.upcoming)} accent="navy" />
