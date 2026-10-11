@@ -971,11 +971,19 @@ function BookingsPanel({
 }) {
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-card">
-      <div className="border-b border-slate-100 px-6 py-4">
-        <h2 className="font-display font-bold text-slate-900">All Bookings</h2>
-        <p className="mt-0.5 text-xs text-slate-400">
-          You can edit or cancel a request while it is still pending, and delete any booking.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+        <div>
+          <h2 className="font-display font-bold text-slate-900">All Bookings</h2>
+          <p className="mt-0.5 text-xs text-slate-400">
+            You can edit or cancel a request while it is still pending, and delete any booking.
+          </p>
+        </div>
+        <Link
+          href="/tutors"
+          className="shrink-0 text-sm font-semibold text-navy-700 hover:text-navy-900"
+        >
+          + Book a new session
+        </Link>
       </div>
       {loading ? (
         <p className="px-6 py-10 text-center text-sm text-slate-400">Loading bookings…</p>
