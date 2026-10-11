@@ -27,7 +27,9 @@ import type { Booking } from "@/lib/types";
 
 type StoredUser = { id?: string; role?: string; full_name?: string };
 type TutorOption = { id: string; fullName: string };
-
+type HomeReviewLinkProps = {
+  tutorId?: string;
+};
 function readStoredUser(): { user: StoredUser | null; token: string } {
   try {
     const raw = localStorage.getItem("tutorconnect_user");
@@ -39,7 +41,9 @@ function readStoredUser(): { user: StoredUser | null; token: string } {
   }
 }
 
-export default function HomeReviewLink() {
+export default function HomeReviewLink({
+  tutorId: scopedTutorId,
+}: HomeReviewLinkProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -127,42 +131,82 @@ export default function HomeReviewLink() {
       const reviewedData = reviewedRes.ok ? await reviewedRes.json().catch(() => null) : null;
       const reviewed: string[] = Array.isArray(reviewedData?.bookingIds) ? reviewedData.bookingIds : [];
       const all: Booking[] = Array.isArray(bookingData?.bookings) ? bookingData.bookings : [];
-      return all.filter((b) => b.status === "completed" && !reviewed.includes(b.id));
+     return all.filter(
+  (b) =>
+    b.status === "completed" &&
+    !reviewed.includes(b.id) &&
+    (!scopedTutorId || b.tutorId === scopedTutorId)
+);
     }
 
-    async function loadForAdmin() {
+        async function loadForAdmin() {
       const res = await fetch("/api/tutors");
-      if (!res.ok) throw new Error("Could not load the tutor list. Please try again.");
+
+      if (!res.ok) {
+        throw new Error("Could not load the tutor list. Please try again.");
+      }
+
       const data = await res.json().catch(() => null);
+
       const list: TutorOption[] = Array.isArray(data?.tutors)
-        ? data.tutors.map((t: { id: string; fullName: string }) => ({ id: String(t.id), fullName: t.fullName }))
+        ? data.tutors.map(
+            (t: { id: string; fullName: string }) => ({
+              id: String(t.id),
+              fullName: t.fullName,
+            })
+          )
         : [];
-      return list;
+
+      return scopedTutorId
+        ? list.filter((t) => t.id === scopedTutorId)
+        : list;
     }
 
     (async () => {
       setLoading(true);
       setLoadError("");
+
       try {
         if (isStudentOrParent && user?.id) {
           const list = await loadForStudentOrParent(user.id);
-          if (active) setBookings(list);
+
+          if (active) {
+            setBookings(list);
+          }
         } else if (isAdmin) {
           const list = await loadForAdmin();
-          if (active) setTutors(list);
+
+          if (active) {
+            setTutors(list);
+          }
         }
       } catch (err) {
-        if (active) setLoadError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+        if (active) {
+          setLoadError(
+            err instanceof Error
+              ? err.message
+              : "Something went wrong. Please try again."
+          );
+        }
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       active = false;
     };
-  }, [open, token, isStudentOrParent, isAdmin, user?.id, authHeaders]);
-
+  }, [
+    open,
+    token,
+    isStudentOrParent,
+    isAdmin,
+    user?.id,
+    authHeaders,
+    scopedTutorId,
+  ]);
   async function submitReview() {
     if (submitting || !selectedId) return;
     setSubmitting(true);
