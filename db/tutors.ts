@@ -7,6 +7,7 @@
  * tutors, callers receive an empty list and render the empty state.
  */
 import { hasDatabase, sql } from "./neon";
+import { ensureTutorTeachingMode } from "./migrate";
 import type { AvailabilitySlot, Curriculum, Review, Tutor } from "@/lib/types";
 
 type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>;
@@ -39,6 +40,7 @@ export interface TutorRow extends Record<string, unknown> {
   is_verified: boolean | null;
   verification_status?: string | null;
   account_status?: string | null;
+  teaching_mode?: string | null;
   subjects?: unknown;
   availability?: unknown;
   id_card_uploaded?: boolean | null;
@@ -90,8 +92,9 @@ export function toAvailabilityList(value: unknown): AvailabilitySlot[] {
 /** Maps a raw `tutor_profiles` + `users` join row onto the UI `Tutor` shape. */
 export function mapTutorRow(row: TutorRow): Tutor {
   const curriculum = CURRICULUM_LABELS[String(row.curriculum ?? "")] ?? "Nigerian National";
-  const area = (row.city ?? "").trim();
-  const state = (row.state ?? "").trim();
+  const area = String(row.city ?? "").trim();
+  const state = String(row.state ?? "").trim();
+  const teachingMode = String(row.teaching_mode ?? "").toLowerCase();
   return {
     // tutor_profiles.id — matches bookings.tutor_id, tutor_subjects.tutor_id, etc.
     id: String(row.id),
@@ -101,7 +104,7 @@ export function mapTutorRow(row: TutorRow): Tutor {
     bio: row.bio || "",
     state: state || "Online",
     area: area || "Remote",
-    isOnline: !area && !state,
+    isOnline: teachingMode === "online" || teachingMode === "both",
     isVerified: row.is_verified === true,
     hourlyRate: toNumber(row.hourly_rate),
     currency: "NGN",
@@ -119,9 +122,16 @@ export function mapTutorRow(row: TutorRow): Tutor {
   };
 }
 
-/** A tutor is publicly visible only once an admin has verified the profile. */
+/** Only verified tutors with eligible account statuses are publicly visible. */
 function isPubliclyVisible(row: TutorRow): boolean {
-  return row.is_verified === true && String(row.verification_status ?? "pending") !== "rejected";
+  const verificationStatus = String(row.verification_status ?? "pending").toLowerCase();
+  const accountStatus = row.account_status == null
+    ? null
+    : String(row.account_status).toLowerCase();
+
+  return row.is_verified === true
+    && verificationStatus !== "rejected"
+    && (accountStatus === null || accountStatus === "approved");
 }
 
 async function attachDetails(tutor: Tutor): Promise<Tutor> {
@@ -166,12 +176,14 @@ async function attachDetails(tutor: Tutor): Promise<Tutor> {
  */
 export async function fetchApprovedTutors(limit = 200): Promise<Tutor[]> {
   if (!hasDatabase) return [];
+  const teachingModeReady = await ensureTutorTeachingMode();
+  if (!teachingModeReady) return [];
   const typedSql = sql as unknown as SqlTag;
   const rows = (await typedSql`
     SELECT
       tp.id, tp.user_id, tp.bio, tp.headline, tp.hourly_rate, tp.currency,
       tp.years_experience, tp.curriculum, tp.rating_avg, tp.total_reviews, tp.total_sessions,
-      tp.is_verified, tp.verification_status,
+      tp.is_verified, tp.verification_status, tp.teaching_mode,
       u.full_name, u.email, u.avatar_url, u.city, u.state, u.account_status,
       COALESCE(
         (SELECT array_agg(ts.subject_name ORDER BY ts.subject_name)
@@ -213,12 +225,14 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Public profile lookup by `tutor_profiles.id`. Returns null when unknown. */
 export async function fetchApprovedTutorById(id: string): Promise<Tutor | null> {
   if (!hasDatabase || !id || !UUID_RE.test(id)) return null;
+  const teachingModeReady = await ensureTutorTeachingMode();
+  if (!teachingModeReady) return null;
   const typedSql = sql as unknown as SqlTag;
   const rows = (await typedSql`
     SELECT
       tp.id, tp.user_id, tp.bio, tp.headline, tp.hourly_rate, tp.currency,
       tp.years_experience, tp.curriculum, tp.rating_avg, tp.total_reviews, tp.total_sessions,
-      tp.is_verified, tp.verification_status,
+      tp.is_verified, tp.verification_status, tp.teaching_mode,
       u.full_name, u.email, u.avatar_url, u.city, u.state, u.account_status,
       COALESCE(
         (SELECT array_agg(ts.subject_name ORDER BY ts.subject_name)

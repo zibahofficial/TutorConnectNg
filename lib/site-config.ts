@@ -66,17 +66,18 @@ export const SUBJECT_CARDS: SubjectCard[] = [
   },
 ];
 
+import { TUTOR_STATES } from "./tutor-options";
+
 export const STATES = [
-  "Lagos (Lekki)",
-  "Lagos (Ikeja)",
-  "Lagos (Yaba)",
-  "Abuja (Maitama)",
-  "Abuja (Gwarinpa)",
-  "Port Harcourt",
-  "Ibadan",
+  ...TUTOR_STATES,
   "Online / Remote",
 ];
 
 export const SUBJECT_FILTERS = ["Maths", "Sciences", "Tech", "Languages", "Commercial", "Exam Prep"];
 
-export const CURRICULA = ["Nigerian National", "British Cambridge", "American"];
+export const CURRICULA = [
+  "Nigerian National",
+  "British Cambridge",
+  "American",
+  "Other",
+];

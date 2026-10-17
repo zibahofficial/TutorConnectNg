@@ -14,6 +14,33 @@ type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<R
 let usersAccountStatusReady: Promise<boolean> | null = null;
 let parentProfilesReady: Promise<boolean> | null = null;
 
+let tutorTeachingModeReady: Promise<boolean> | null = null;
+
+/**
+ * Adds the optional teaching_mode field without changing existing tutor data.
+ */
+export function ensureTutorTeachingMode(): Promise<boolean> {
+  if (!hasDatabase) return Promise.resolve(false);
+  if (!tutorTeachingModeReady) {
+    tutorTeachingModeReady = (async () => {
+      const typedSql = sql as unknown as SqlTag;
+      try {
+        await typedSql`
+          ALTER TABLE tutor_profiles
+          ADD COLUMN IF NOT EXISTS teaching_mode VARCHAR(20)
+        `;
+        return true;
+      } catch (err) {
+        console.error("Could not ensure tutor_profiles.teaching_mode exists:", err);
+        tutorTeachingModeReady = null;
+        return false;
+      }
+    })();
+  }
+  return tutorTeachingModeReady;
+}
+
+
 /**
  * Ensures the `parent_profiles` table exists.
  *
