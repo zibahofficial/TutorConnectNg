@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import type { UserRole } from "@/lib/types";
+import { SUBJECT_OPTIONS } from "@/lib/tutor-subjects";
 import { TUTOR_HEADLINES, TUTOR_STATES, QUALIFICATIONS, TEACHING_MODES } from "@/lib/tutor-options";
 
 /**
@@ -62,20 +63,6 @@ const EDUCATION_LEVELS = [
   "Adult / professional",
   "Parent booking for a child",
 ];
-
-
-const SUBJECT_OPTIONS = [
-  "📑 Accounting", "🌱 Agricultural Science", "🧬 Biology", "💼 Business Studies",
-  "🧪 Chemistry", "⛪ Christian Religious Studies", "🤝 Civic Education",
-  "💻 Computer Science", "📊 Data Analysis", "💹 Economics", "📖 English Language",
-  "💰 Financial Accounting", "🎨 Fine Art", "🇫🇷 French", "🧮 Further Mathematics",
-  "🌍 Geography", "🏛️ Government", "🗣️ Hausa", "📜 History", "✈️ IELTS Preparation",
-  "🗣️ Igbo", "🎯 JAMB / UTME Coaching", "✍️ Literature in English", "📐 Mathematics",
-  "🎹 Music", "🔤 Phonics & Reading", "⚛️ Physics", "🎤 Public Speaking",
-  "🧠 Verbal & Quantitative Reasoning", "📝 WAEC & NECO Prep", "🌐 Web Development",
-  "🗣️ Yoruba",
-];
-
 
 
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
@@ -334,7 +321,14 @@ const isParentBookingForChild = educationLevel === "Parent booking for a child";
                 yearsExperience,
                 ratePerSession,
                 hourlyRate: ratePerSession ? Number(ratePerSession) : undefined,
-                teachingMode,
+                teachingMode:
+                  teachingMode === "Online & in person"
+                    ? "both"
+                    : teachingMode === "Online only"
+                      ? "online"
+                      : teachingMode === "In person only"
+                        ? "in_person"
+                        : "",
                 subjects: selectedSubjects,
                 qualification: qualification || undefined,
               }

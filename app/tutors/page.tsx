@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   Loader2,
@@ -238,6 +239,15 @@ function TutorsPageInner() {
               Filter by subject, location, budget, availability, and
               curriculum to find verified tutors who match your needs.
             </p>
+            <div className="mt-6 flex justify-center">
+  <Link
+    href="/smart-match"
+    className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-blue-800"
+  >
+    <Sparkles className="h-5 w-5" />
+    Smart Tutor Match
+  </Link>
+</div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <div className="flex flex-1 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5">

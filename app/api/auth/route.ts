@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { hasDatabase, sql } from "@/db/neon";
-import { ensureUsersAccountStatus, ensureParentProfiles } from "@/db/migrate";
+import { ensureUsersAccountStatus, ensureParentProfiles, ensureTutorTeachingMode } from "@/db/migrate";
 import { getUserStore, getChildStore, getSavedTutorStore, getAvailabilityStore, getDocumentStore, getVerificationStore, verifyToken, DAY_TO_INDEX, INDEX_TO_DAY, type StoredUser, type Child, type SavedTutor, type AvailabilitySlot, type TutorDocument, type TutorVerification } from "@/lib/auth-store";
 import { TUTOR_DOCUMENT_TYPE_VALUES } from "@/lib/tutor-options";
 import type { UserRole } from "@/lib/types";
@@ -189,12 +189,25 @@ export async function POST(req: NextRequest) {
         }
 
         if (role === "tutor") {
+          const validTeachingModes = ["online", "in_person", "both"];
+          if (!teachingMode || !validTeachingModes.includes(teachingMode)) {
+            return NextResponse.json(
+              { error: "Please select a valid teaching mode." },
+              { status: 400 },
+            );
+          }
+
+          const teachingModeReady = await ensureTutorTeachingMode();
+          if (!teachingModeReady) {
+            throw new Error("Tutor teaching mode database field is unavailable.");
+          }
+
           const tpInserted = await typedSql`
             INSERT INTO tutor_profiles (
-              user_id, bio, headline, hourly_rate, curriculum, years_experience
+              user_id, bio, headline, hourly_rate, curriculum, years_experience, teaching_mode
             )
             VALUES (
-              ${(user.id as string)}, ${bio}, ${headline}, ${hourlyRate}, ${"nigerian_national"}, ${yearsExperience}
+              ${(user.id as string)}, ${bio}, ${headline}, ${hourlyRate}, ${"nigerian_national"}, ${yearsExperience}, ${teachingMode}
             )
             RETURNING id
           `;
@@ -945,10 +958,6 @@ export async function POST(req: NextRequest) {
         dataUrl,
         uploadedAt: new Date().toISOString(),
       };
-      const docStore = getDocumentStore();
-      const docs = docStore.get(auth.user.id) || [];
-      docs.push(doc);
-      docStore.set(auth.user.id, docs);
 
       if (hasDatabase) {
         try {
@@ -958,11 +967,28 @@ export async function POST(req: NextRequest) {
             VALUES (${auth.user.id}, ${type}, ${name}, ${dataUrl})
             RETURNING id
           `;
-          doc.id = (inserted[0] as Record<string, unknown>).id as string;
+
+          if (!inserted.length || !(inserted[0] as Record<string, unknown>).id) {
+            return NextResponse.json(
+              { error: "The document could not be saved. Please try again." },
+              { status: 500 }
+            );
+          }
+
+          doc.id = String((inserted[0] as Record<string, unknown>).id);
         } catch (err) {
           console.error("Neon document insert failed:", err);
+          return NextResponse.json(
+            { error: "The document could not be saved. Please try again." },
+            { status: 500 }
+          );
         }
       }
+
+      const docStore = getDocumentStore();
+      const docs = docStore.get(auth.user.id) || [];
+      docs.push(doc);
+      docStore.set(auth.user.id, docs);
 
       return NextResponse.json({ success: true, document: doc }, { status: 201 });
     }
@@ -1005,18 +1031,20 @@ export async function POST(req: NextRequest) {
           const rows = await typedSql`
             SELECT id, doc_type, file_name, file_data, created_at FROM tutor_documents WHERE user_id = ${auth.user.id} ORDER BY created_at
           `;
-          if (rows.length) {
-            docs = rows.map((r) => ({
-              id: String(r.id),
-              type: String(r.doc_type),
-              name: String(r.file_name),
-              dataUrl: String(r.file_data),
-              uploadedAt: new Date(String(r.created_at)).toISOString(),
-            }));
-            docStore.set(auth.user.id, docs);
-          }
+          docs = rows.map((r) => ({
+            id: String(r.id),
+            type: String(r.doc_type),
+            name: String(r.file_name),
+            dataUrl: String(r.file_data),
+            uploadedAt: new Date(String(r.created_at)).toISOString(),
+          }));
+          docStore.set(auth.user.id, docs);
         } catch (err) {
           console.error("Neon document read failed:", err);
+          return NextResponse.json(
+            { error: "Could not load your saved documents. Please try again." },
+            { status: 500 }
+          );
         }
       }
 
@@ -1059,6 +1087,10 @@ export async function POST(req: NextRequest) {
           `;
         } catch (err) {
           console.error("Neon verification upsert failed:", err);
+          return NextResponse.json(
+            { error: "Your application could not be saved. Please try again." },
+            { status: 500 }
+          );
         }
       }
 
@@ -1111,6 +1143,10 @@ export async function POST(req: NextRequest) {
           }
         } catch (err) {
           console.error("Neon verification review failed:", err);
+          return NextResponse.json(
+            { error: "The review could not be saved. Please try again." },
+            { status: 500 }
+          );
         }
       }
 
@@ -1161,6 +1197,10 @@ export async function POST(req: NextRequest) {
           });
         } catch (err) {
           console.error("Neon verification applications failed:", err);
+          return NextResponse.json(
+            { error: "Could not load verification applications. Please try again." },
+            { status: 500 }
+          );
         }
       }
 

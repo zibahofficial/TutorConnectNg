@@ -144,9 +144,13 @@ export default function BookingModal({
       } catch {
         // ignore; studentName/studentId will be empty
       }
+      const token = localStorage.getItem("tutorconnect_token") || "";
       const res = await fetch("/api/bookings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           tutorId: tutor.id,
           tutorName: tutor.fullName,
