@@ -160,10 +160,10 @@ def slide_title(prs):
             bold=True, caps=True, spacing=1.4)
 
     team = [
-        ("Hephzibah Uchechukwu", "Team Leader · Frontend, UI, Smart Tutor Match, Revenue Model"),
-        ("Chioma Helen Ezeufonna", "Backend · API Routes, Server-Side Logic, Auth & Roles"),
-        ("Uzochukwu Mary Cynthia Enyemakachukwu", "Database · Schema, Structure, Data Relationships"),
-        ("Bodman Ebuka Precious", "Deployment · System Inspection, Testing & QA, Ops Checks"),
+        ("Hephzibah Uchechukwu", "Team Lead · Product, Frontend & Smart Tutor Match"),
+        ("Chioma Helen Ezeufonna", "Backend · APIs, Authentication & Roles"),
+        ("Uzochukwu Mary Cynthia Enyemakachukwu", "Database · PostgreSQL, Schema & Data"),
+        ("Bodman Ebuka Precious", "Deployment · Testing, QA & Operations"),
     ]
     x0, cw, gap = 0.85, 2.85, 0.14
     for i, (nm, role) in enumerate(team):
@@ -194,7 +194,7 @@ def slide_title(prs):
     return s
 
 
-# ============================================================== SLIDE 2 ======
+# ============================================================== SLIDE 3 ======
 def slide_overview(prs):
     s = new_slide(prs, bg=SLATE_50)
     y = header(s, "What we built", "Project Overview",
@@ -251,7 +251,7 @@ def slide_overview(prs):
                lead="Truth in the data:", fill=BLUE_LT, border=RGBColor(0xBF, 0xDB, 0xFE),
                lead_color=NAVY)
 
-    footer(s, 2, TOTAL)
+    footer(s, 3, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader).\n\n"
              "TutorConnect Nigeria is a marketplace for Nigerian tutoring. Four "
              "roles: student, parent, tutor and administrator. The same account "
@@ -261,7 +261,7 @@ def slide_overview(prs):
     return s
 
 
-# ============================================================== SLIDE 3 ======
+# ============================================================== SLIDE 4 ======
 def slide_problem(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "The problem", "The challenge: finding and booking a tutor",
@@ -321,7 +321,7 @@ def slide_problem(prs):
                lead="Evidence:", fill=EMERALD_LT, border=EMERALD,
                lead_color=EMERALD_DK)
 
-    footer(s, 3, TOTAL)
+    footer(s, 4, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader).\n\n"
              "Five concrete frictions. Notice the green line on each card — that is "
              "the part of our code that answers it. And the amber box on the right is "
@@ -330,7 +330,7 @@ def slide_problem(prs):
     return s
 
 
-# ============================================================== SLIDE 4 ======
+# ============================================================== SLIDE 5 ======
 def slide_solution(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Our solution", "One platform, four roles, one source of truth",
@@ -409,7 +409,7 @@ def slide_solution(prs):
                lead="Access model:", fill=BLUE_LT, border=RGBColor(0xBF, 0xDB, 0xFE),
                lead_color=NAVY, fg=SLATE_600)
 
-    footer(s, 4, TOTAL)
+    footer(s, 5, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader).\n\n"
              "Every problem from the previous slide now maps to a shipped feature. "
              "Four roles, one platform — and the role is not a cosmetic label: it is "
@@ -417,7 +417,7 @@ def slide_solution(prs):
     return s
 
 
-# ============================================================== SLIDE 5 ======
+# ============================================================== SLIDE 6 ======
 def slide_journey(prs):
     s = new_slide(prs, bg=SLATE_50)
     y = header(s, "User journey", "How the website works, end to end",
@@ -485,7 +485,7 @@ def slide_journey(prs):
                lead="Booking lifecycle:", fill=EMERALD_LT, border=EMERALD,
                lead_color=EMERALD_DK)
 
-    footer(s, 5, TOTAL)
+    footer(s, 6, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader).\n\n"
              "Walk the judges through the seven steps. Emphasise step 7: the review "
              "name comes from the authenticated user, so a reviewer can never "
@@ -493,14 +493,14 @@ def slide_journey(prs):
     return s
 
 
-# ============================================================== SLIDE 6 ======
+# ============================================================== SLIDE 7 ======
 def slide_frontend(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Frontend development & user experience",
                "Responsive UI, reusable components",
                sub="The frontend is the part of the product students and parents actually touch — "
-                   "so it is where most of our design effort went.")
-    presenter_tag(s, "Hephzibah Uchechukwu", "Team Leader · Frontend & UI", y=0.40)
+                   "so it is where most of our design effort went.", owner_tag=True)
+    presenter_tag(s, "Hephzibah Uchechukwu", "Product · Frontend & UI", y=0.40, accent=BLUE)
 
     items = [
         ("Next.js 16 · App Router", "File routes, server-rendered pages and API handlers.",
@@ -601,7 +601,7 @@ def slide_frontend(prs):
             "The layout represents the shipped Navbar, filters, TutorCard and booking actions.",
             size=8.5, color=SLATE_400, italic=True)
 
-    footer(s, 6, TOTAL)
+    footer(s, 7, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader) — frontend section.\n\n"
              "Point out the 3x2 grid: for every technology, what it is and exactly "
              "where we used it. The right-hand panel is the contract with the "
@@ -612,14 +612,14 @@ def slide_frontend(prs):
     return s
 
 
-# ============================================================== SLIDE 7 ======
+# ============================================================== SLIDE 8 ======
 def slide_smart_match(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Smart Tutor Matching & tutor discovery",
                "Transparent, rules-based tutor matching",
                sub="The learner states what they need; the engine filters eligible tutors, "
-                   "scores each one against their preferences and explains every match.")
-    presenter_tag(s, "Hephzibah Uchechukwu", "Team Leader · Frontend & UI", y=0.40)
+                   "scores each one against their preferences and explains every match.", owner_tag=True)
+    presenter_tag(s, "Hephzibah Uchechukwu", "Smart Tutor Match", y=0.40, accent=BLUE)
 
     flow = [
         ("Learner's needs", "Subject, budget, curriculum,\nlocation, availability", NAVY),
@@ -699,7 +699,7 @@ def slide_smart_match(prs):
                lead="Accuracy note:", fill=AMBER_LT, border=AMBER,
                lead_color=SLATE_900)
 
-    footer(s, 7, TOTAL)
+    footer(s, 8, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader) — Smart Tutor Match.\n\n"
              "Six stages left to right. Two criteria are gates (subject and budget); "
              "the rest add weighted points, and the result is a percentage plus a "
@@ -709,14 +709,14 @@ def slide_smart_match(prs):
     return s
 
 
-# ============================================================== SLIDE 8 ======
+# ============================================================== SLIDE 9 ======
 def slide_backend(prs):
     s = new_slide(prs, bg=SLATE_50)
     y = header(s, "Backend development & API architecture",
                "How a request moves through our system",
                sub="The backend is a set of HTTP route handlers that validate, authorise, "
-                   "query PostgreSQL and return JSON.")
-    presenter_tag(s, "Chioma Helen Ezeufonna", "Backend · APIs · Auth", y=0.40)
+                   "query PostgreSQL and return JSON.", owner_tag=True)
+    presenter_tag(s, "Chioma Helen Ezeufonna", "Backend · APIs · Auth", y=0.40, accent=EMERALD_DK)
 
     arch = [
         ("React client", "Browser — client components\nin app/ and components/", SLATE_700),
@@ -782,7 +782,7 @@ def slide_backend(prs):
         ("No database", "DATABASE_URL absent → 503 for booking/chat; tutor list is empty."),
     ], size=9, gap=0.075)
 
-    footer(s, 8, TOTAL)
+    footer(s, 9, TOTAL)
     notes(s, "Chioma Helen Ezeufonna (Backend).\n\n"
              "The architecture is one request path: client → route handler → business "
              "rules → Neon → PostgreSQL → JSON. On the left are the five real "
@@ -792,15 +792,15 @@ def slide_backend(prs):
     return s
 
 
-# ============================================================== SLIDE 9 ======
+# ============================================================= SLIDE 10 ======
 def slide_database(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Database design & data management",
                "PostgreSQL data model: 10 connected tables",
                sub="PostgreSQL is the relational database that stores the data; Neon is the "
-                   "managed hosting service that runs it and exposes it over HTTP.")
+                   "managed hosting service that runs it and exposes it over HTTP.", owner_tag=True)
     presenter_tag(s, "Uzochukwu Mary Cynthia Enyemakachukwu", "Database Design",
-                  y=0.32, w=5.2)
+                  y=0.40, w=5.8, accent=AMBER)
 
     # ---- ER sketch -------------------------------------------------------
     boxes = [
@@ -904,7 +904,7 @@ def slide_database(prs):
                         color=SLATE_600, line=1.12)
                 cy += h + 0.02
 
-    footer(s, 9, TOTAL)
+    footer(s, 10, TOTAL)
     notes(s, "Uzochukwu Mary Cynthia Enyemakachukwu (Database).\n\n"
              "Ten tables built around one identity table. users is the hub; "
              "tutor_profiles and parent_profiles extend it one-to-one; bookings ties "
@@ -916,86 +916,96 @@ def slide_database(prs):
     return s
 
 
-# ============================================================= SLIDE 10 ======
+# ============================================================= SLIDE 11 ======
 def slide_stack(prs):
     s = new_slide(prs, bg=SLATE_50)
-    y = header(s, "Technologies, frameworks & tooling",
-               "The technology stack",
-               sub="No framework was added “just in case”. Each dependency below earns "
-                   "its place in a specific screen or route.")
+    y = header(s, "Technology map by team responsibility",
+               "Every technology has a job — and a clear owner",
+               sub="Each row defines the technology, its purpose and where it appears in the repository.")
 
-    rows = [
-        ("Framework", "Next.js 16.3.8 · App Router",
-         "Routing, server components and API route handlers in one deployable app.",
-         "app/ routes + app/api/*/route.ts", NAVY),
-        ("UI runtime", "React 19.2.8",
-         "Component model for interactive screens; 'use client' marks the interactive ones.",
-         "21 components; dashboards, booking modal, chat", BLUE),
-        ("Language", "TypeScript 5 (strict)",
-         "Static type safety across domain types, API payloads and React props.",
-         "lib/types.ts, typed sql row mappers, strict tsconfig", EMERALD),
-        ("Styling", "Tailwind CSS v4",
-         "Utility-first CSS driven by design tokens instead of a custom stylesheet.",
-         "tailwind.config.js palette, shadows, keyframes", EMERALD_DK),
-        ("Animation", "Framer Motion 14",
-         "Declarative, interruptible transitions without hand-written CSS animation.",
-         "HeroSlider, BookingModal, tutor grid layout", AMBER),
-        ("Icons", "lucide-react 1.50",
-         "Consistent, accessible SVG icon set that inherits Tailwind colour tokens.",
-         "Navbar, badges, empty states, dashboards", ROSE),
-        ("Database", "@neondatabase/serverless 1.2",
-         "HTTP-based Postgres driver — no TCP socket pooling in a serverless runtime.",
-         "db/neon.ts, db/tutors.ts, db/bookings.ts", NAVY_800),
-        ("Auth", "bcryptjs 3 · jsonwebtoken 9",
-         "Password hashing and stateless signed tokens.",
-         "app/api/auth/route.ts — signup, login, role gates", BLUE),
-        ("Deployment", "Vercel (zero config)",
-         "Detects Next.js, runs next build, deploys /api as serverless Node functions.",
-         "runtime = \"nodejs\" on every route", EMERALD),
-        ("Quality", "ESLint 9 + eslint-config-next",
-         "Static analysis for React and TypeScript correctness, run as npm run lint.",
-         "eslint.config.mjs (core-web-vitals + typescript)", SLATE_700),
+    owners = [
+        ("PRODUCT & FRONTEND", "Hephzibah Uchechukwu", BLUE, [
+            ("Next.js 16.3.8", "Web framework: App Router and page routing.  app/"),
+            ("React 19.2.8 + TypeScript 5", "Component UI plus static types for props and data.  components/ · lib/types.ts"),
+            ("Tailwind CSS 4", "Utility styling for responsive layouts.  app/globals.css · tailwind.config.js"),
+            ("Framer Motion 14 + lucide-react 1.50", "UI transitions and SVG icons.  components/"),
+        ]),
+        ("BACKEND · APIs & AUTH", "Chioma Helen Ezeufonna", EMERALD_DK, [
+            ("Next.js Route Handlers", "HTTP JSON endpoints.  app/api/*/route.ts"),
+            ("Node.js runtime", "Server-side runtime for the API route code.  runtime = \"nodejs\""),
+            ("bcryptjs 3 + jsonwebtoken 9", "Password hashing + signed JWTs for authenticated API requests.  app/api/auth/"),
+            ("@neondatabase/serverless 1.2", "HTTP PostgreSQL client used by server-side data code.  db/neon.ts"),
+        ]),
+        ("DATABASE DESIGN", "Uzochukwu Mary Cynthia Enyemakachukwu", AMBER, [
+            ("PostgreSQL", "Relational database: keys, constraints, triggers and indexes.  db/schema.sql"),
+            ("Neon", "Managed serverless PostgreSQL service; the app connects with DATABASE_URL."),
+            ("SQL schema", "10 tables · 4 enums · 2 triggers · 17 explicit indexes.  db/schema.sql"),
+            ("Migrations", "Guarded schema setup and updates.  db/migrate.ts · db/migrations/"),
+        ]),
+        ("DEPLOYMENT · TESTING & QA", "Bodman Ebuka Precious", ROSE, [
+            ("Vercel", "Hosting/deployment platform for the Next.js app.  README.md"),
+            ("ESLint 9", "Static lint checks via npm run lint — passed in this inspection."),
+            ("TypeScript compiler", "npx tsc --noEmit — passed in this inspection."),
+            ("Production build", "npm run build was blocked here by the Google Fonts network fetch."),
+        ]),
     ]
-    colw = (CW - 0.30) / 2
-    for i, (layer, tech, what, where, c) in enumerate(rows):
-        col, row = i // 5, i % 5
-        x = M + col * (colw + 0.30)
-        yy = y + 0.36 + row * 0.83
-        card(s, x, yy, colw, 0.75, fill=WHITE, border=SLATE_200, radius=0.06)
-        rect(s, x, yy, 0.05, 0.75, fill=c)
-        chip(s, x + 0.18, yy + 0.12, 1.02, 0.20, layer.upper(), fill=SLATE_100,
-             fg=SLATE_600, size=7.5)
-        text_at(s, x + 1.30, yy + 0.11, colw - 1.5, 0.25, tech, size=11,
-                color=SLATE_900, bold=True, font=FONT_SB)
-        text_at(s, x + 0.18, yy + 0.37, colw - 0.36, 0.19, what, size=8.8,
-                color=SLATE_600, line=1.12)
-        text_at(s, x + 0.18, yy + 0.57, colw - 0.36, 0.16, "Used in:  " + where,
-                size=8, color=c, bold=True)
 
-    note_strip(s, M, y + 4.52, CW, 0.58,
-               "Next 16.3.8 · React 19.2.8 · TypeScript 5 · Tailwind 4 · Motion 14 · "
-               "lucide-react 1.50 · Neon driver 1.2 · bcryptjs 3 · JWT 9 · ESLint 9",
-               lead="Versions in package.json:", fill=BLUE_LT,
-               border=RGBColor(0xBF, 0xDB, 0xFE), lead_color=NAVY, fg=SLATE_600,
-               size=9.4)
+    gap_x, gap_y = 0.22, 0.18
+    card_w = (CW - gap_x) / 2
+    card_h = 2.04
+    positions = [(M, y + 0.28), (M + card_w + gap_x, y + 0.28),
+                 (M, y + 2.50), (M + card_w + gap_x, y + 2.50)]
 
-    footer(s, 10, TOTAL)
-    notes(s, "Hephzibah Uchechukwu (Team Leader).\n\n"
-             "This is the full dependency list — ten layers, nothing decorative. "
-             "Each row says what the technology is and where in our code it is "
-             "actually used, so the judges can verify every claim against the "
-             "repository.")
+    for (role, name, accent, rows), (x, yy) in zip(owners, positions):
+        card(s, x, yy, card_w, card_h, fill=WHITE, border=SLATE_200, radius=0.08)
+        rect(s, x, yy, card_w, 0.055, fill=accent)
+        chip(s, x + 0.18, yy + 0.12, 2.25, 0.22, role, fill=SLATE_100,
+             fg=accent, size=7.3, align=PP_ALIGN.CENTER)
+        name_size = 8.2 if len(name) > 30 else 9.0
+        text_at(s, x + 2.55, yy + 0.12, card_w - 2.74, 0.23, name,
+                size=name_size, color=SLATE_900, bold=True, font=FONT_SB)
+        text_at(s, x + 0.20, yy + 0.40, 2.20, 0.14, "TECHNOLOGY", size=7.0,
+                color=SLATE_400, bold=True, caps=True, spacing=0.7)
+        text_at(s, x + 2.55, yy + 0.40, card_w - 2.75, 0.14,
+                "PURPOSE · REPOSITORY LOCATION", size=7.0, color=SLATE_400,
+                bold=True, caps=True, spacing=0.6)
+        row_y = yy + 0.57
+        row_h = 0.34
+        for i, (tech, detail) in enumerate(rows):
+            ry = row_y + i * row_h
+            if i:
+                line(s, x + 0.18, ry - 0.025, x + card_w - 0.18, ry - 0.025,
+                     color=SLATE_100, width=0.7)
+            text_at(s, x + 0.20, ry, 2.24, row_h - 0.015, tech, size=8.1,
+                    color=SLATE_900, bold=True, line=1.05)
+            text_at(s, x + 2.55, ry, card_w - 2.74, row_h - 0.015, detail,
+                    size=7.9, color=SLATE_600, line=1.05)
+
+    note_strip(s, M, y + 4.74, CW, 0.48,
+               "each member presents only their own card; Bodman leads slide 12.",
+               lead="Shared handoff:", fill=BLUE_LT,
+               border=RGBColor(0xBF, 0xDB, 0xFE), lead_color=NAVY,
+               fg=SLATE_700, size=9.1)
+
+    footer(s, 11, TOTAL)
+    notes(s, "Shared handoff; each member presents only their own row, in this order: "
+             "Hephzibah Uchechukwu for the frontend technologies, Chioma Helen Ezeufonna "
+             "for the API/auth layer, Uzochukwu Mary Cynthia Enyemakachukwu for PostgreSQL "
+             "and Neon, and Bodman Ebuka Precious for Vercel and QA tooling. For each row, "
+             "say the technology, what it does, and where the evidence is in the repository. "
+             "Do not claim that a proposed feature or unrun test is implemented. Bodman then "
+             "continues with slide 12.")
     return s
 
 
-# ============================================================= SLIDE 11 ======
+# ============================================================= SLIDE 12 ======
 def slide_qa(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Testing, quality assurance & deployment",
                "Evidence, deployment and honest caveats",
                sub="What we actually ran, what we could not run, and the deployment "
-                   "configuration that runs the site today.")
-    presenter_tag(s, "Bodman Ebuka Precious", "Deployment · Testing & QA", y=0.40)
+                   "configuration that runs the site today.", owner_tag=True)
+    presenter_tag(s, "Bodman Ebuka Precious", "Deployment · Testing & QA", y=0.40, accent=ROSE)
 
     lw = 6.15
     section_label(s, M, y + 0.36, lw, "What we actually ran")
@@ -1052,7 +1062,7 @@ def slide_qa(prs):
         ("Build-time fonts", "next/font fetches from fonts.googleapis.com, so a network-restricted build environment fails early."),
     ], size=9.5, gap=0.10, marker=AMBER)
 
-    footer(s, 11, TOTAL)
+    footer(s, 12, TOTAL)
     notes(s, "Bodman Ebuka Precious (Deployment, Testing & QA).\n\n"
              "Distinguish repository evidence from claims. This inspection ran strict "
              "TypeScript checking and ESLint successfully. A production build was "
@@ -1064,72 +1074,68 @@ def slide_qa(prs):
     return s
 
 
-# ============================================================= SLIDE 12 ======
+# ============================================================== SLIDE 2 ======
 def slide_team(prs):
     s = new_slide(prs, bg=SLATE_50)
-    y = header(s, "Our team", "Four people, four owned areas",
-               sub="One shared repository and one shared Next.js codebase — these are areas "
-                   "of ownership, not separate projects.")
+    y = header(s, "Team ownership & speaker order",
+               "One project, four clear responsibilities",
+               sub="The presentation follows a simple handoff: product → APIs → data → deployment & quality.")
 
     members = [
-        ("HU", "Hephzibah Uchechukwu", "Team Leader",
-         ["Frontend development & user interface", "Smart Tutor Matching and tutor discovery",
-          "Revenue model", "Conclusion and closing remarks"],
-         "Opens the presentation and presents slides 2–7, 10 and 13–15.", NAVY),
-        ("CE", "Chioma Helen Ezeufonna", "Backend Developer",
-         ["Backend development", "API routes and request handling", "Server-side functionality",
-          "Authentication and role-based authorisation"],
-         "Presents slide 8 — the API architecture and security model.", BLUE),
-        ("UM", "Uzochukwu Mary Cynthia Enyemakachukwu", "Database Designer",
-         ["Database design and schema", "Data management", "Database structure and relationships",
-          "Database-related implementation"],
-         "Presents slide 9 — the schema, triggers and data flow.", EMERALD),
-        ("BP", "Bodman Ebuka Precious", "Deployment & QA",
-         ["Deployment and deployment configuration", "System inspection", "Testing and quality assurance",
-          "Operational checks and limitations"],
-         "Presents slide 11 — testing evidence and the Vercel/Neon setup.", AMBER),
+        ("01", "Hephzibah Uchechukwu", "TEAM LEAD · PRODUCT & FRONTEND",
+         "Frontend/UI · Smart Tutor Match · revenue, impact & conclusion",
+         "Opens slides 1–2; leads slides 3–8 and 13–15; presents the frontend row on slide 11.", BLUE),
+        ("02", "Chioma Helen Ezeufonna", "BACKEND · APIs & AUTH",
+         "API architecture · request handling · authentication and role checks",
+         "Presents slide 9 and the backend row on slide 11.", EMERALD_DK),
+        ("03", "Uzochukwu Mary Cynthia Enyemakachukwu", "DATABASE DESIGN",
+         "PostgreSQL schema · relationships · constraints and migrations",
+         "Presents slide 10 and the database row on slide 11.", AMBER),
+        ("04", "Bodman Ebuka Precious", "DEPLOYMENT · TESTING & QA",
+         "Vercel setup · deployment checks · test evidence and limitations",
+         "Presents slide 12 and the deployment/QA row on slide 11.", ROSE),
     ]
-    cw, gap = 2.90, 0.19
-    for i, (ini, nm, role, resp, pres, c) in enumerate(members):
-        x = M + i * (cw + gap)
-        h = 4.22
-        card(s, x, y + 0.36, cw, h, fill=WHITE, border=SLATE_200, radius=0.08)
-        rect(s, x, y + 0.36, cw, 0.06, fill=c)
-        badge = rect(s, x + 0.24, y + 0.62, 0.72, 0.72, fill=c, radius=0.30,
-                     shape_type=MSO_SHAPE.OVAL)
-        tf = badge.text_frame
-        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        p = tf.paragraphs[0]
-        p.alignment = PP_ALIGN.CENTER
-        run(p, ini, size=17, color=WHITE, bold=True, font=FONT_SB)
-        name_size = 10.4 if len(nm) > 30 else 12.0
-        text_at(s, x + 0.24, y + 1.48, cw - 0.48, 0.50, nm, size=name_size,
-                color=SLATE_900, bold=True, font=FONT_SB, line=1.06)
-        chip(s, x + 0.24, y + 2.02, 1.86, 0.28, role.upper(), fill=SLATE_100,
-             fg=NAVY, size=8.5, align=PP_ALIGN.CENTER)
-        cy = y + 2.46
-        for r in resp:
-            h2 = text_h(r, cw - 0.72, 8.6, 1.14)
-            rect(s, x + 0.26, cy + 0.05, 0.09, 0.09, fill=c, radius=0.5)
-            text_at(s, x + 0.48, cy, cw - 0.74, h2, r, size=8.6, color=SLATE_600,
-                    line=1.14)
-            cy += h2 + 0.06
-        line(s, x + 0.24, y + 3.58, x + cw - 0.24, y + 3.58, color=SLATE_200, width=0.75)
-        text_at(s, x + 0.24, y + 3.70, cw - 0.48, 0.76, pres, size=9,
-                color=SLATE_500, italic=True, line=1.2)
+    gap = 0.22
+    cw = (CW - gap) / 2
+    ch = 1.68
+    positions = [(M, y + 0.28), (M + cw + gap, y + 0.28),
+                 (M, y + 2.10), (M + cw + gap, y + 2.10)]
+    for (num, name, role, scope, speaking, c), (x, yy) in zip(members, positions):
+        card(s, x, yy, cw, ch, fill=WHITE, border=SLATE_200, radius=0.08)
+        rect(s, x, yy, 0.055, ch, fill=c)
+        numbered_node(s, x + 0.20, yy + 0.17, 0.42, num, fill=c, size=9.5)
+        name_size = 12.4 if len(name) > 30 else 13.2
+        text_at(s, x + 0.76, yy + 0.14, cw - 0.96, 0.31, name,
+                size=name_size, color=SLATE_900, bold=True, font=FONT_SB)
+        text_at(s, x + 0.76, yy + 0.48, cw - 0.96, 0.22, role,
+                size=8.4, color=c, bold=True, caps=True, spacing=0.5)
+        line(s, x + 0.20, yy + 0.78, x + cw - 0.20, yy + 0.78,
+             color=SLATE_200, width=0.75)
+        text_at(s, x + 0.20, yy + 0.88, 0.76, 0.18, "SCOPE", size=7.6,
+                color=SLATE_500, bold=True, caps=True, spacing=0.6)
+        text_at(s, x + 1.02, yy + 0.86, cw - 1.22, 0.29, scope,
+                size=8.8, color=SLATE_700, line=1.08)
+        text_at(s, x + 0.20, yy + 1.24, 0.76, 0.18, "PRESENTS", size=7.6,
+                color=SLATE_500, bold=True, caps=True, spacing=0.6)
+        text_at(s, x + 1.02, yy + 1.19, cw - 1.22, 0.39, speaking,
+                size=8.4, color=SLATE_600, line=1.10)
 
-    note_strip(s, M, y + 4.74, CW, 0.56,
-               "every change in this repository was reviewed and merged by the whole "
-               "team, but each area below has a single accountable owner for the "
-               "hackathon presentation.",
-               lead="How we worked:", fill=BLUE_LT, border=RGBColor(0xBF, 0xDB, 0xFE),
-               lead_color=NAVY, fg=SLATE_600)
+    note_strip(s, M, y + 3.98, CW, 0.76,
+               "Hephzibah opens → Chioma covers APIs → Uzochukwu covers the database → "
+               "all four present only their own technology row on slide 11 → Bodman covers "
+               "deployment/QA → Hephzibah closes. All four take Q&A on slide 16.",
+               lead="Speaking flow:", fill=BLUE_LT,
+               border=RGBColor(0xBF, 0xDB, 0xFE), lead_color=NAVY,
+               fg=SLATE_700, size=9.4)
 
-    footer(s, 12, TOTAL)
-    notes(s, "Hephzibah Uchechukwu (Team Leader) introduces the team.\n\n"
-             "Four members, four owned areas. Then hand over: Chioma for the "
-             "backend, Cynthia for the database, and Precious for testing and "
-             "deployment.")
+    footer(s, 2, TOTAL)
+    notes(s, "Hephzibah Uchechukwu introduces the speaker order before the product overview.\n\n"
+             "Say clearly: these are presentation responsibilities, not claims that each person "
+             "worked in isolation or authored every line in that area. We built one shared "
+             "repository. The handoff is Hephzibah, Chioma, Uzochukwu, a short slide 11 "
+             "technology handoff with each member speaking only to their own row, then "
+             "Bodman, and Hephzibah returns for the business, impact and close. All four "
+             "members take questions on slide 16.")
     return s
 
 
@@ -1138,8 +1144,8 @@ def slide_revenue(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Revenue model", "The marketplace is already priced in the product",
                sub="Money is not yet moved by the platform — but the data needed to price it "
-                   "correctly is already stored, validated and displayed.")
-    presenter_tag(s, "Hephzibah Uchechukwu", "Team Leader · Revenue Model", y=0.40)
+                   "correctly is already stored, validated and displayed.", owner_tag=True)
+    presenter_tag(s, "Hephzibah Uchechukwu", "Revenue Model", y=0.40, accent=BLUE)
 
     lw = 6.15
     section_label(s, M, y + 0.36, lw, "Already implemented in the code")
@@ -1281,8 +1287,8 @@ def slide_conclusion(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Conclusion", "What we built — and what comes next",
                sub="A complete, deployed marketplace for verified Nigerian tutoring, "
-                   "with every layer written by this team.")
-    presenter_tag(s, "Hephzibah Uchechukwu", "Team Leader · Closing remarks", y=0.40)
+                   "with every layer written by this team.", owner_tag=True)
+    presenter_tag(s, "Hephzibah Uchechukwu", "Closing remarks", y=0.40, accent=BLUE)
 
     left = [
         ("A real product, not a mock-up", "15 routes, 21 components, 5 API routes, 10 database tables and a live deployment — all in this repository.", NAVY),
@@ -1399,6 +1405,7 @@ def main():
     prs.slide_height = Inches(SH)
 
     slide_title(prs)
+    slide_team(prs)
     slide_overview(prs)
     slide_problem(prs)
     slide_solution(prs)
@@ -1409,7 +1416,6 @@ def main():
     slide_database(prs)
     slide_stack(prs)
     slide_qa(prs)
-    slide_team(prs)
     slide_revenue(prs)
     slide_value(prs)
     slide_conclusion(prs)

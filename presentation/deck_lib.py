@@ -227,10 +227,11 @@ def new_slide(prs, bg=WHITE):
 
 
 def header(slide, kicker, title, accent=BLUE, title_size=30, sub=None,
-           title_color=SLATE_900):
-    """Eyebrow + title + optional sub-line, with a short accent rule."""
+           title_color=SLATE_900, owner_tag=False):
+    """Eyebrow + title + optional sub-line; reserve the eyebrow row for speaker ownership."""
     rect(slide, M, 0.46, 0.055, 0.19, fill=accent)
-    text_at(slide, M + 0.16, 0.42, CW - 0.2, 0.26, kicker.upper(), size=10.5,
+    kicker_w = CW - 6.0 if owner_tag else CW - 0.2
+    text_at(slide, M + 0.16, 0.42, kicker_w, 0.26, kicker.upper(), size=10.5,
             color=accent, bold=True, caps=True, spacing=1.2)
     text_at(slide, M, 0.72, CW, 0.46, title, size=title_size, color=title_color,
             bold=True, font=FONT_SB, line=1.0)
@@ -241,33 +242,48 @@ def header(slide, kicker, title, accent=BLUE, title_size=30, sub=None,
     return y
 
 
-def footer(slide, n, total=16, note="TutorConnect Nigeria  ·  Edumentry AI Hackathon 1.0",
-           color=SLATE_400):
+FOOTER_PRESENTERS = {
+    2: "Presenter: Hephzibah Uchechukwu · Team plan",
+    3: "Presenter: Hephzibah Uchechukwu · Project overview",
+    4: "Presenter: Hephzibah Uchechukwu · Problem",
+    5: "Presenter: Hephzibah Uchechukwu · Solution",
+    6: "Presenter: Hephzibah Uchechukwu · User journey",
+    7: "Presenter: Hephzibah Uchechukwu · Frontend",
+    8: "Presenter: Hephzibah Uchechukwu · Smart Tutor Match",
+    9: "Presenter: Chioma Helen Ezeufonna · Backend / APIs / Auth",
+    10: "Presenter: Uzochukwu Mary Cynthia Enyemakachukwu · Database",
+    11: "Shared handoff · each member presents their own technology row",
+    12: "Presenter: Bodman Ebuka Precious · Deployment / Testing / QA",
+    13: "Presenter: Hephzibah Uchechukwu · Revenue model",
+    14: "Presenter: Hephzibah Uchechukwu · Value & impact",
+    15: "Presenter: Hephzibah Uchechukwu · Conclusion",
+}
+
+
+def footer(slide, n, total=16, note=None, color=SLATE_400):
+    """Footer names the speaking owner so presentation handoffs stay explicit."""
     line(slide, M, SH - 0.52, SW - M, SH - 0.52, color=SLATE_200, width=0.75)
-    text_at(slide, M, SH - 0.42, CW - 1.4, 0.24, note, size=9.5, color=color)
+    note = note or FOOTER_PRESENTERS.get(n, "TutorConnect Nigeria  ·  Edumentry AI Hackathon 1.0")
+    text_at(slide, M, SH - 0.42, CW - 1.4, 0.24, note, size=8.8, color=color)
     text_at(slide, SW - M - 1.3, SH - 0.42, 1.3, 0.24, f"{n} / {total}", size=9.5,
             color=color, align=PP_ALIGN.RIGHT, bold=True)
 
 
-def presenter_tag(slide, name, role, x=None, y=0.32, w=4.6, dark=False):
-    """Small 'Presented by' pill for the top-right of a presenter slide."""
-    if len(name) > 25 and w == 4.6:
-        w = 5.2
+def presenter_tag(slide, name, role, x=None, y=0.40, w=5.8, accent=BLUE):
+    """A compact owner badge that names both the speaker and their responsibility."""
     x = SW - M - w if x is None else x
-    bg = RGBColor(0x1B, 0x2E, 0x63) if dark else BLUE_LT
-    fg = WHITE if dark else NAVY
-    sh = rect(slide, x, y, w, 0.36, fill=bg, radius=0.5)
+    sh = rect(slide, x, y, w, 0.27, fill=WHITE, line=accent, lw=0.8, radius=0.5)
     tf = sh.text_frame
-    tf.margin_left = Inches(0.16)
+    tf.margin_left = Inches(0.12)
     tf.margin_right = Inches(0.10)
     tf.margin_top = 0
     tf.margin_bottom = 0
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.LEFT
-    run(p, "Presenter  ", size=8.5, color=(SLATE_400 if not dark else SLATE_300),
-        bold=True, caps=True, spacing=0.8)
-    run(p, name, size=(9.5 if len(name) > 25 else 10.5), color=fg, bold=True)
+    run(p, "PRESENTER  ", size=7.5, color=SLATE_500, bold=True, caps=True, spacing=0.6)
+    run(p, name, size=8.3, color=SLATE_900, bold=True)
+    run(p, "  ·  " + role, size=7.9, color=accent, bold=True)
     return sh
 
 
