@@ -493,7 +493,7 @@ def slide_journey(prs):
     return s
 
 
-# ============================================================== SLIDE 7 ======
+# ============================================================== SLIDE 8 ======
 def slide_frontend(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Frontend development & user experience",
@@ -601,7 +601,7 @@ def slide_frontend(prs):
             "The layout represents the shipped Navbar, filters, TutorCard and booking actions.",
             size=8.5, color=SLATE_400, italic=True)
 
-    footer(s, 7, TOTAL)
+    footer(s, 8, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader) — frontend section.\n\n"
              "Point out the 3x2 grid: for every technology, what it is and exactly "
              "where we used it. The right-hand panel is the contract with the "
@@ -612,7 +612,7 @@ def slide_frontend(prs):
     return s
 
 
-# ============================================================== SLIDE 8 ======
+# ============================================================== SLIDE 9 ======
 def slide_smart_match(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Smart Tutor Matching & tutor discovery",
@@ -699,7 +699,7 @@ def slide_smart_match(prs):
                lead="Accuracy note:", fill=AMBER_LT, border=AMBER,
                lead_color=SLATE_900)
 
-    footer(s, 8, TOTAL)
+    footer(s, 9, TOTAL)
     notes(s, "Hephzibah Uchechukwu (Team Leader) — Smart Tutor Match.\n\n"
              "Six stages left to right. Two criteria are gates (subject and budget); "
              "the rest add weighted points, and the result is a percentage plus a "
@@ -709,7 +709,7 @@ def slide_smart_match(prs):
     return s
 
 
-# ============================================================== SLIDE 9 ======
+# ============================================================= SLIDE 10 ======
 def slide_backend(prs):
     s = new_slide(prs, bg=SLATE_50)
     y = header(s, "Backend development & API architecture",
@@ -782,7 +782,7 @@ def slide_backend(prs):
         ("No database", "DATABASE_URL absent → 503 for booking/chat; tutor list is empty."),
     ], size=9, gap=0.075)
 
-    footer(s, 9, TOTAL)
+    footer(s, 10, TOTAL)
     notes(s, "Chioma Helen Ezeufonna (Backend).\n\n"
              "The architecture is one request path: client → route handler → business "
              "rules → Neon → PostgreSQL → JSON. On the left are the five real "
@@ -792,7 +792,7 @@ def slide_backend(prs):
     return s
 
 
-# ============================================================= SLIDE 10 ======
+# ============================================================= SLIDE 11 ======
 def slide_database(prs):
     s = new_slide(prs, bg=WHITE)
     y = header(s, "Database design & data management",
@@ -904,7 +904,7 @@ def slide_database(prs):
                         color=SLATE_600, line=1.12)
                 cy += h + 0.02
 
-    footer(s, 10, TOTAL)
+    footer(s, 11, TOTAL)
     notes(s, "Uzochukwu Mary Cynthia Enyemakachukwu (Database).\n\n"
              "Ten tables built around one identity table. users is the hub; "
              "tutor_profiles and parent_profiles extend it one-to-one; bookings ties "
@@ -916,12 +916,14 @@ def slide_database(prs):
     return s
 
 
-# ============================================================= SLIDE 11 ======
+# ============================================================= SLIDE 7 ======
 def slide_stack(prs):
     s = new_slide(prs, bg=SLATE_50)
     y = header(s, "Technology map by team responsibility",
                "Every technology has a job — and a clear owner",
-               sub="Each row defines the technology, its purpose and where it appears in the repository.")
+               sub="Each row defines the technology, its purpose and where it appears in the repository.",
+               owner_tag=True)
+    presenter_tag(s, "Hephzibah Uchechukwu", "Team Lead · Technology Map", y=0.40, accent=BLUE)
 
     owners = [
         ("PRODUCT & FRONTEND", "Hephzibah Uchechukwu", BLUE, [
@@ -950,7 +952,7 @@ def slide_stack(prs):
         ]),
     ]
 
-    gap_x, gap_y = 0.22, 0.18
+    gap_x = 0.22
     card_w = (CW - gap_x) / 2
     card_h = 2.04
     positions = [(M, y + 0.28), (M + card_w + gap_x, y + 0.28),
@@ -982,19 +984,19 @@ def slide_stack(prs):
                     size=7.9, color=SLATE_600, line=1.05)
 
     note_strip(s, M, y + 4.74, CW, 0.48,
-               "each member presents only their own card; Bodman leads slide 12.",
-               lead="Shared handoff:", fill=BLUE_LT,
+               "The named owners present their technical sections on slides 8–12.",
+               lead="Speaker plan:", fill=BLUE_LT,
                border=RGBColor(0xBF, 0xDB, 0xFE), lead_color=NAVY,
                fg=SLATE_700, size=9.1)
 
-    footer(s, 11, TOTAL)
-    notes(s, "Shared handoff; each member presents only their own row, in this order: "
-             "Hephzibah Uchechukwu for the frontend technologies, Chioma Helen Ezeufonna "
-             "for the API/auth layer, Uzochukwu Mary Cynthia Enyemakachukwu for PostgreSQL "
-             "and Neon, and Bodman Ebuka Precious for Vercel and QA tooling. For each row, "
-             "say the technology, what it does, and where the evidence is in the repository. "
-             "Do not claim that a proposed feature or unrun test is implemented. Bodman then "
-             "continues with slide 12.")
+    footer(s, 7, TOTAL)
+    notes(s, "Hephzibah Uchechukwu introduces this map; there is no mid-slide handoff. "
+             "Explain that the cards show the role-specific technology overview, with "
+             "purpose and repository location. The next technical sections are presented "
+             "by their named owners: Hephzibah covers frontend and Smart Tutor Match on "
+             "slides 8–9, Chioma covers backend/APIs/auth on slide 10, Uzochukwu covers "
+             "database design on slide 11, and Bodman covers deployment/testing/QA on "
+             "slide 12. Then Hephzibah returns for slides 13–15.")
     return s
 
 
@@ -1084,16 +1086,16 @@ def slide_team(prs):
     members = [
         ("01", "Hephzibah Uchechukwu", "TEAM LEAD · PRODUCT & FRONTEND",
          "Frontend/UI · Smart Tutor Match · revenue, impact & conclusion",
-         "Opens slides 1–2; leads slides 3–8 and 13–15; presents the frontend row on slide 11.", BLUE),
+         "Opens slides 1–2; leads slides 3–9 and 13–15, including the technology map on slide 7.", BLUE),
         ("02", "Chioma Helen Ezeufonna", "BACKEND · APIs & AUTH",
          "API architecture · request handling · authentication and role checks",
-         "Presents slide 9 and the backend row on slide 11.", EMERALD_DK),
+         "Presents slide 10 — backend, APIs and authentication.", EMERALD_DK),
         ("03", "Uzochukwu Mary Cynthia Enyemakachukwu", "DATABASE DESIGN",
          "PostgreSQL schema · relationships · constraints and migrations",
-         "Presents slide 10 and the database row on slide 11.", AMBER),
+         "Presents slide 11 — PostgreSQL schema and data relationships.", AMBER),
         ("04", "Bodman Ebuka Precious", "DEPLOYMENT · TESTING & QA",
          "Vercel setup · deployment checks · test evidence and limitations",
-         "Presents slide 12 and the deployment/QA row on slide 11.", ROSE),
+         "Presents slide 12 — deployment, testing and QA.", ROSE),
     ]
     gap = 0.22
     cw = (CW - gap) / 2
@@ -1121,9 +1123,9 @@ def slide_team(prs):
                 size=8.4, color=SLATE_600, line=1.10)
 
     note_strip(s, M, y + 3.98, CW, 0.76,
-               "Hephzibah opens → Chioma covers APIs → Uzochukwu covers the database → "
-               "all four present only their own technology row on slide 11 → Bodman covers "
-               "deployment/QA → Hephzibah closes. All four take Q&A on slide 16.",
+               "Hephzibah opens and leads product/technology (slides 1–9) → Chioma: backend/API (10) "
+               "→ Uzochukwu: database (11) → Bodman: deployment/QA (12) → Hephzibah: revenue, "
+               "impact and close (13–15). All four take Q&A on slide 16.",
                lead="Speaking flow:", fill=BLUE_LT,
                border=RGBColor(0xBF, 0xDB, 0xFE), lead_color=NAVY,
                fg=SLATE_700, size=9.4)
@@ -1132,9 +1134,10 @@ def slide_team(prs):
     notes(s, "Hephzibah Uchechukwu introduces the speaker order before the product overview.\n\n"
              "Say clearly: these are presentation responsibilities, not claims that each person "
              "worked in isolation or authored every line in that area. We built one shared "
-             "repository. The handoff is Hephzibah, Chioma, Uzochukwu, a short slide 11 "
-             "technology handoff with each member speaking only to their own row, then "
-             "Bodman, and Hephzibah returns for the business, impact and close. All four "
+             "repository. The handoff is Hephzibah for the product and technology overview, "
+             "then Chioma for backend/APIs/auth, Uzochukwu for database design, Bodman for "
+             "deployment/testing/QA, and Hephzibah returns for revenue, impact and the close. "
+             "All four "
              "members take questions on slide 16.")
     return s
 
@@ -1410,11 +1413,11 @@ def main():
     slide_problem(prs)
     slide_solution(prs)
     slide_journey(prs)
+    slide_stack(prs)
     slide_frontend(prs)
     slide_smart_match(prs)
     slide_backend(prs)
     slide_database(prs)
-    slide_stack(prs)
     slide_qa(prs)
     slide_revenue(prs)
     slide_value(prs)
